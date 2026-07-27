@@ -1,0 +1,376 @@
+@import './tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /* The frames set no root line-height, so unspecified line-heights resolve to
+     `normal`. Tailwind's preflight puts 1.5 on <html>, which makes every
+     heading ~8px taller than drawn — reset it and let each style opt in. */
+  html {
+    line-height: normal;
+  }
+
+  body {
+    margin: 0;
+    background: var(--surface-page);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* README §2.9 / §8.2 — the single most important layout rule in this design.
+     Cube & timer SVGs are raw flex children; without this they get squashed by
+     adjacent text and sit on a text baseline.
+
+     Tailwind's preflight makes img/svg `display: block`, which the frames do
+     not do — a block image ignores the `text-align: center` the invite hero and
+     splash rely on, and it makes `vertical-align` a no-op. Restore the inline
+     display the frames were drawn against. */
+  svg {
+    display: inline;
+    flex-shrink: 0;
+    vertical-align: middle;
+  }
+
+  img {
+    display: inline-block;
+    vertical-align: middle;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--text-dim);
+  }
+
+  /* The code boxes draw their preview character at full box weight. */
+  .aq-code-box::placeholder {
+    color: var(--text-dim);
+    opacity: 1;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--text-primary);
+  }
+}
+
+@layer components {
+  /* Heading voice — matches the frames' own `.h-serif`: Plus Jakarta Sans 800.
+     (Despite the legacy class name, the frames render headings in the sans.) */
+  .h-serif {
+    font-family: var(--font-sans);
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  /* Numeral voice — Playfair Display, per README §1.3 "stat numerals stay Playfair". */
+  .h-num {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .eye {
+    font: 800 10px var(--font-sans);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .aq-card {
+    background: var(--surface-card);
+    border-radius: 18px;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Cube/timer mounts — keep every ice cube at its true size, block-centred. */
+  .cube {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Focus visibility — README §9 Q1 (pre-resolved): --ring-focus for keyboard focus. */
+  .focus-ring:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  /* Thin scrollbars so scroll containers don't disturb the drawn spacing. */
+  .aq-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.16) transparent;
+  }
+  .aq-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .aq-scroll::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.16);
+    border-radius: 100px;
+  }
+  .aq-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  [data-theme='dark'] .aq-scroll {
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  [data-theme='dark'] .aq-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+  }
+}
+
+@layer utilities {
+  /* Interactive states — README §9 Q1, pre-resolved by the build brief. */
+  .aq-press {
+    transition: transform 0.12s ease, background var(--dur-fast) var(--ease-standard),
+      box-shadow var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast) var(--ease-standard);
+  }
+  .aq-press:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .aq-press:disabled,
+  .aq-press[aria-disabled='true'] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* Cards lift to --shadow-pop on hover. */
+  .aq-lift {
+    transition: box-shadow var(--dur-fast) var(--ease-standard),
+      transform var(--dur-fast) var(--ease-standard);
+  }
+  .aq-lift:hover {
+    box-shadow: var(--shadow-pop);
+  }
+
+  /* Buttons darken ~6% on hover — an overlay keeps it token-agnostic. */
+  .aq-darken {
+    position: relative;
+    isolation: isolate;
+  }
+  .aq-darken::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: #000;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease-standard);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .aq-darken:hover:not(:disabled)::after {
+    opacity: 0.06;
+  }
+  [data-theme='dark'] .aq-darken::after {
+    background: #fff;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   RESPONSIVE (README §5)
+
+   The frames are drawn at one width: a 1200×720 content area. Desktop holds
+   that exactly; below it the two-column layouts reflow. Anything under
+   834px is out of scope, so the tablet-landscape minimum is held there.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── laptop 1024–1279px — same structure, content fills the width ───── */
+@media (max-width: 1279px) {
+  .aq-cols {
+    gap: 16px;
+  }
+  /* Subjects: the detail pane stops out-growing the list. */
+  .aq-detail-pane {
+    flex: 1 !important;
+  }
+}
+
+/* ── tablet-landscape 834–1023px ───────────────────────────────────── */
+@media (max-width: 1023px) {
+  /* Plan drops to a single column: the plan card full-width, then the
+     Focus card and "This week" side by side beneath it. */
+  .aq-plan-cols {
+    flex-direction: column;
+  }
+  .aq-plan-main {
+    flex: 1 1 auto !important;
+  }
+  .aq-plan-side {
+    flex-direction: row !important;
+  }
+  .aq-plan-side > * {
+    flex: 1;
+  }
+
+  /* Subjects switches from master-detail to list-only with the detail below. */
+  .aq-subject-cols {
+    flex-direction: column;
+  }
+  .aq-subject-cols > * {
+    width: 100%;
+    flex: 1 1 auto !important;
+  }
+
+  /* Profile stacks its two columns. */
+  .aq-profile-cols {
+    flex-direction: column;
+  }
+
+  /* Settings rail narrows to 240px. */
+  .aq-settings-rail {
+    width: 240px !important;
+  }
+
+  /* Ada's history sidebar narrows with it. */
+  .aq-ada-rail {
+    width: 240px !important;
+  }
+}
+
+/* ── below tablet-landscape — hold the 834px minimum ───────────────── */
+@media (max-width: 833px) {
+  .aq-min-width {
+    min-width: 834px;
+  }
+}
+
+/* Fixed at every width: the nav never wraps, and the Feedback board scrolls
+   horizontally rather than compressing its lanes. */
+.aq-board-lane {
+  min-width: 180px;
+}
+
+/* ── Signature ice motion — used by IceTimer & the melting cube ─────── */
+@keyframes aqDrip {
+  0% {
+    transform: translateY(0) scaleY(0.7);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(26px) scaleY(1.3);
+    opacity: 0;
+  }
+}
+
+@keyframes aqShimmer {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* ── Screen / overlay motion (README §6) ───────────────────────────── */
+@keyframes aqFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes aqScrimIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes aqPanelIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes aqPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes aqSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.aq-screen {
+  animation: aqFadeUp 0.34s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aq-drip {
+    display: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .aq-press:active:not(:disabled) {
+    transform: none;
+  }
+}

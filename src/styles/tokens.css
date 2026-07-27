@@ -1,0 +1,180 @@
+/* ══════════════════════════════════════════════════════════════════════
+   AQADEMIQ · DESIGN TOKENS
+   Transcribed from the handoff frames' own token sheet (README §1).
+   Warm paper canvas, ink-black pills, a periwinkle accent, and a signature
+   "melting ice" ramp that drives the Ada mascot + mood + focus states.
+   ══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Brand accents (3 selectable brand hues) ───────────────────────── */
+  --aq-periwinkle:        #6b5cf0;   /* primary — the default Aqademiq accent */
+  --aq-periwinkle-soft:   #edeafd;   /* tint behind periwinkle (chips, fills) */
+  --aq-rose:              #e85476;   /* alt accent */
+  --aq-rose-soft:         #fde8ed;
+  --aq-green:             #2a9d6b;   /* alt accent + success */
+  --aq-green-soft:        #e8fdf3;
+
+  /* ── Ink & paper ───────────────────────────────────────────────────── */
+  --aq-ink:               #111111;   /* primary buttons, active nav pills */
+  --aq-white:             #ffffff;   /* card surface (light) */
+  --aq-paper:             #f4f3f0;   /* warm page canvas (default "Warm") */
+  --aq-paper-neutral:     #f5f5f5;   /* "Neutral" warmth */
+  --aq-paper-cool:        #f0f3f7;   /* "Cool" warmth */
+  --aq-hilite:            #eceae7;   /* recessed pill / track / segmented bg */
+  --aq-frame:             #dbd9d5;   /* device-frame backdrop */
+
+  /* ── Neutrals / text ───────────────────────────────────────────────── */
+  --aq-text:              #111111;
+  --aq-text-medium:       #777777;
+  --aq-text-dim:          #c0c0c0;
+  --aq-border:            rgba(0, 0, 0, 0.07);
+
+  /* ── Semantic status ───────────────────────────────────────────────── */
+  --aq-success:           #2a9d6b;
+  --aq-warning:           #e8a430;   /* guest locks, alerts, "In progress" */
+  --aq-danger:            #e85476;
+
+  /* ── Melting-ice ramp (0 = melted/worst → 4 = frozen/best) ─────────── */
+  --aq-ice-0-border: #a79fc4;  --aq-ice-0-body: #eae8f2;  --aq-ice-0-ink: #938eac;  /* Rough */
+  --aq-ice-1-border: #9286d2;  --aq-ice-1-body: #e4ddf3;  --aq-ice-1-ink: #787299;  /* Tired */
+  --aq-ice-2-border: #7d70d9;  --aq-ice-2-body: #dcd3f7;  --aq-ice-2-ink: #5c5499;  /* OK    */
+  --aq-ice-3-border: #6a5ce4;  --aq-ice-3-body: #d2c5fa;  --aq-ice-3-ink: #41358f;  /* Good  */
+  --aq-ice-4-border: #5a44f1;  --aq-ice-4-body: #cbbcfd;  --aq-ice-4-ink: #31237c;  /* Great */
+  --aq-frost:             #9fd6ef;   /* frozen-cube glow / paused ring */
+  --aq-drip:              #bfe6f5;   /* falling melt-drop */
+
+  /* ── Study tag palette ─────────────────────────────────────────────── */
+  --aq-tag-lecture:       #5cbbff;
+  --aq-tag-class:         #6b5cf0;
+  --aq-tag-exam:          #e85476;
+  --aq-tag-assignment:    #2a9d6b;
+  --aq-tag-report:        #e8a430;
+  --aq-tag-presentation:  #c0497b;
+  --aq-tag-reading:       #7a8699;
+
+  /* ── Signature gradient (invite / referral hero only) ──────────────── */
+  --aq-gradient-invite:   linear-gradient(135deg, #6b5cf0 0%, #b39df5 52%, #e9c8d8 100%);
+
+  /* ══ SEMANTIC ALIASES — reference these in components ═══════════════ */
+  --surface-page:         var(--aq-paper);
+  --surface-card:         var(--aq-white);
+  --surface-ink:          var(--aq-ink);
+  --surface-sunken:       var(--aq-hilite);
+
+  --text-primary:         var(--aq-text);
+  --text-secondary:       var(--aq-text-medium);
+  --text-dim:             var(--aq-text-dim);
+  --text-on-ink:          #ffffff;
+  --text-on-accent:       #ffffff;
+
+  --accent:               var(--aq-periwinkle);
+  --accent-soft:          var(--aq-periwinkle-soft);
+  --border-hairline:      var(--aq-border);
+
+  /* ── Typography ────────────────────────────────────────────────────── */
+  --font-sans:     "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-display:  "Playfair Display", Georgia, serif;
+  --font-numeral:  "Playfair Display", Georgia, serif;
+  --font-mono:     "JetBrains Mono", "Courier New", monospace;
+
+  --weight-regular:   400;
+  --weight-medium:    500;
+  --weight-semibold:  600;
+  --weight-bold:      700;
+  --weight-extrabold: 800;
+
+  --text-timer:    46px;
+  --text-hero:     36px;
+  --text-display:  32px;
+  --text-title:    26px;
+  --text-h1:       22px;
+  --text-h2:       18px;
+  --text-h3:       15px;
+  --text-lg:       14px;
+  --text-base:     12px;
+  --text-sm:       11px;
+  --text-xs:       10px;
+  --text-2xs:      9px;
+
+  --leading-tight:   1.2;
+  --leading-snug:    1.4;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.6;
+
+  --tracking-tighter: -2px;
+  --tracking-tight:   -0.5px;
+  --tracking-normal:  0;
+  --tracking-label:   0.12em;
+  --tracking-wide:    0.14em;
+
+  /* ── Radii ─────────────────────────────────────────────────────────── */
+  --radius-sm:    10px;
+  --radius-md:    12px;
+  --radius-tab:   14px;
+  --radius-lg:    16px;
+  --radius-card:  18px;
+  --radius-xl:    20px;
+  --radius-2xl:   22px;
+  --radius-pill:  100px;
+
+  /* ── Elevation & borders ───────────────────────────────────────────── */
+  --shadow-card:      0 2px 16px rgba(0, 0, 0, 0.08);
+  --shadow-card-dark: 0 2px 20px rgba(0, 0, 0, 0.55);
+  --shadow-nav:       0 4px 28px rgba(0, 0, 0, 0.13);
+  --shadow-pop:       0 14px 44px rgba(0, 0, 0, 0.18);
+  --shadow-sheet:     0 -8px 40px rgba(0, 0, 0, 0.20);
+  --shadow-accent:    0 8px 24px rgba(107, 92, 240, 0.23);
+
+  --border-width: 1.5px;
+  --border-hair:  1px solid var(--aq-border);
+  --ring-focus:   0 0 0 2px var(--accent);
+  --ring-inset:   inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+
+  /* ── Scrims ────────────────────────────────────────────────────────── */
+  --scrim-soft:    rgba(20, 15, 28, 0.28);
+  --scrim:         rgba(20, 15, 28, 0.42);
+  --scrim-popover: rgba(20, 15, 28, 0.22);
+
+  /* ── Motion ────────────────────────────────────────────────────────── */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:      0.18s;
+  --dur-base:      0.3s;
+  --dur-timer:     0.9s;
+}
+
+/* ── DARK THEME ────────────────────────────────────────────────────────
+   Paper goes near-black, cards lift to charcoal, the accent becomes the
+   ink pill colour. Text tokens per the build brief's pre-resolved §9 Q4;
+   --accent-soft is carried over from the frames' own dark block. */
+[data-theme="dark"] {
+  --surface-page:    #0e0e0e;
+  --surface-card:    #1b1b1b;
+  --surface-ink:     var(--aq-periwinkle);
+  --surface-sunken:  #33333a;
+  --aq-frame:        #161616;
+
+  --text-primary:    #f2f1ee;
+  --text-secondary:  #9a9a9a;
+  --text-dim:        #6a6a6a;
+  --border-hairline: rgba(255, 255, 255, 0.08);
+
+  --accent:          var(--aq-periwinkle);
+  --accent-soft:     #2a2340;
+
+  --shadow-card:     var(--shadow-card-dark);
+}
+
+/* ── Background warmth (Settings → Appearance) ─────────────────────── */
+[data-warmth="neutral"] { --aq-paper: var(--aq-paper-neutral); }
+[data-warmth="cool"]    { --aq-paper: var(--aq-paper-cool); }
+/* In dark mode the paper is fixed near-black; warmth applies to light only. */
+[data-theme="dark"][data-warmth="neutral"],
+[data-theme="dark"][data-warmth="cool"] { --surface-page: #0e0e0e; }
+
+/* ── Brand accent (Settings → Appearance) ──────────────────────────── */
+[data-accent="rose"]  { --accent: var(--aq-rose);  --accent-soft: var(--aq-rose-soft); }
+[data-accent="green"] { --accent: var(--aq-green); --accent-soft: var(--aq-green-soft); }
+[data-theme="dark"][data-accent="rose"]  { --accent-soft: #3a222a; }
+[data-theme="dark"][data-accent="green"] { --accent-soft: #143024; }
+[data-theme="dark"][data-accent="rose"]  { --surface-ink: var(--aq-rose); }
+[data-theme="dark"][data-accent="green"] { --surface-ink: var(--aq-green); }
