@@ -1,41 +1,83 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdaCube from '../../components/brand/AdaCube';
 import GoogleMark from '../../components/brand/GoogleMark';
 import Button from '../../components/core/Button';
 import Icon from '../../components/core/Icon';
 import Input from '../../components/core/Input';
-import { useAppState } from '../../hooks/useAppState';
+import { errorMessage } from '../../components/core/Async';
+import { useAuth } from '../../hooks/useAuth';
 import { isEmail } from '../../lib/validate';
 
 /* Frames 00.2 — Welcome (sign in / guest). Two equal panes, no nav.
-   /signin renders the same screen; the right pane is the sign-in form. */
+   /signin renders the same screen; the right pane is the sign-in form.
+
+   All three routes in are real Supabase Auth calls: password sign-in, the
+   Google OAuth redirect, and anonymous sign-in for "Jump right in!". */
+
+type Action = 'password' | 'google' | 'guest';
 
 export default function Welcome() {
   const navigate = useNavigate();
-  const { set } = useAppState();
+  const { signIn, signInWithGoogle, continueAsGuest, busy } = useAuth();
 
-  const [email, setEmail] = useState('ridhwan@bits.ac.in');
-  const [password, setPassword] = useState('password');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [formError, setFormError] = useState('');
+  /** Which control started the in-flight call — only that one spins. */
+  const [pending, setPending] = useState<Action | null>(null);
 
-  function signIn() {
+  async function submitPassword() {
     const next: typeof errors = {};
     if (!email.trim()) next.email = 'Enter your email address.';
     else if (!isEmail(email)) next.email = 'Enter a valid email address.';
     if (!password) next.password = 'Enter your password.';
     setErrors(next);
+    setFormError('');
     if (Object.keys(next).length) return;
 
-    // Returning user → straight to the plan (README §4.3).
-    set({ guest: false, onboarded: true, email });
-    navigate('/plan');
+    setPending('password');
+    try {
+      await signIn(email, password);
+      navigate('/plan', { replace: true });
+    } catch (err) {
+      setFormError(errorMessage(err));
+    } finally {
+      setPending(null);
+    }
   }
 
-  function jumpIn() {
-    set({ guest: true, onboarded: false });
-    navigate('/plan');
+  async function google() {
+    setErrors({});
+    setFormError('');
+    setPending('google');
+    try {
+      // Redirects away on success — nothing to navigate to here.
+      await signInWithGoogle();
+    } catch (err) {
+      setFormError(errorMessage(err));
+      setPending(null);
+    }
+  }
+
+  async function jumpIn() {
+    setErrors({});
+    setFormError('');
+    setPending('guest');
+    try {
+      await continueAsGuest();
+      navigate('/plan', { replace: true });
+    } catch (err) {
+      setFormError(errorMessage(err));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  function onFieldKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') void submitPassword();
   }
 
   return (
@@ -95,18 +137,22 @@ export default function Welcome() {
           <Input
             label="EMAIL"
             type="email"
+            autoComplete="email"
             value={email}
             error={errors.email}
             onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={onFieldKeyDown}
             wrapperStyle={{ marginBottom: 13 }}
           />
 
           <Input
             label="PASSWORD"
             type={showPassword ? 'text' : 'password'}
+            autoComplete="current-password"
             value={password}
             error={errors.password}
             onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={onFieldKeyDown}
             wrapperStyle={{ marginBottom: 18 }}
             trailing={
               <button
@@ -121,7 +167,26 @@ export default function Welcome() {
             }
           />
 
-          <Button full onClick={signIn} style={{ marginBottom: 12 }}>
+          {formError && (
+            <div
+              role="alert"
+              style={{
+                font: '600 10.5px/1.5 var(--font-sans)',
+                color: 'var(--aq-danger)',
+                marginBottom: 12,
+              }}
+            >
+              {formError}
+            </div>
+          )}
+
+          <Button
+            full
+            onClick={() => void submitPassword()}
+            loading={busy && pending === 'password'}
+            disabled={busy}
+            style={{ marginBottom: 12 }}
+          >
             Sign in / Sign up
           </Button>
 
@@ -131,12 +196,28 @@ export default function Welcome() {
             <div style={{ flex: 1, height: 1, background: 'var(--border-hairline)' }} />
           </div>
 
-          <Button variant="ghost" full onClick={signIn} style={{ marginBottom: 9 }}>
-            <GoogleMark />
+          <Button
+            variant="ghost"
+            full
+            onClick={() => void google()}
+            loading={busy && pending === 'google'}
+            disabled={busy}
+            style={{ marginBottom: 9 }}
+          >
+            {!(busy && pending === 'google') && <GoogleMark />}
             Continue with Google
           </Button>
 
-          <Button variant="soft" full onClick={jumpIn} trailingIcon="arrow_forward" iconSize={16} style={{ height: 44, marginBottom: 16 }}>
+          <Button
+            variant="soft"
+            full
+            onClick={() => void jumpIn()}
+            loading={busy && pending === 'guest'}
+            disabled={busy}
+            trailingIcon="arrow_forward"
+            iconSize={16}
+            style={{ height: 44, marginBottom: 16 }}
+          >
             Jump right in!
           </Button>
 

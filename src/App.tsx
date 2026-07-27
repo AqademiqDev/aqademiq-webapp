@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import AppShell from './layouts/AppShell';
 import AuthShell from './layouts/AuthShell';
@@ -28,8 +29,62 @@ import Account from './screens/settings/panels/Account';
 
 import DevComponents from './dev/DevComponents';
 
+import { useAuth } from './hooks/useAuth';
+import { useProfile } from './hooks/data/useProfile';
+import { Loading } from './components/core/Async';
+
 /** README §8 — the dev gallery stays behind a flag; it never ships in a build. */
 const SHOW_DEV = import.meta.env.DEV;
+
+/**
+ * Gate for everything inside the app shell.
+ *
+ * Signed-out visitors are sent to the welcome screen. Registered users who have
+ * not finished the wizard are sent to `/setup` — guests are deliberately exempt
+ * so "Jump right in!" lands straight on the plan, which is what frame 00b.1
+ * draws.
+ */
+function RequireSession({ children }: { children: ReactNode }) {
+  const { status, isGuest } = useAuth();
+  const profile = useProfile();
+  const location = useLocation();
+
+  if (status === 'loading') return <Loading label="Getting things ready…" padding={80} />;
+  if (status === 'signed-out') return <Navigate to="/welcome" replace state={{ from: location.pathname }} />;
+
+  if (!isGuest && profile.isLoading) return <Loading label="Getting things ready…" padding={80} />;
+  if (!isGuest && profile.data && profile.data.onboarding_complete === false) {
+    return <Navigate to="/setup" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+/** Entry screens bounce an already-authenticated visitor into the app. */
+function RedirectIfAuthed({ children }: { children: ReactNode }) {
+  const { status } = useAuth();
+  if (status === 'guest' || status === 'signed-in') return <Navigate to="/plan" replace />;
+  return <>{children}</>;
+}
+
+/**
+ * `/signup` is also the guest **upgrade** path — every "save your progress"
+ * CTA points here — so a guest must be let through. Only a fully registered
+ * user has nothing to do on this screen.
+ */
+function AllowGuestUpgrade({ children }: { children: ReactNode }) {
+  const { status } = useAuth();
+  if (status === 'signed-in') return <Navigate to="/plan" replace />;
+  return <>{children}</>;
+}
+
+/** `/setup` needs a session (guest or real) but must not be gated on itself. */
+function RequireAnySession({ children }: { children: ReactNode }) {
+  const { status } = useAuth();
+  if (status === 'loading') return <Loading label="Getting things ready…" padding={80} />;
+  if (status === 'signed-out') return <Navigate to="/welcome" replace />;
+  return <>{children}</>;
+}
 
 export default function App() {
   return (
@@ -37,15 +92,15 @@ export default function App() {
       {/* ── Entry & Onboarding — no TopNav (README §4.1) ────────────── */}
       <Route element={<AuthShell />}>
         <Route path="/" element={<Splash />} />
-        <Route path="/welcome" element={<Welcome />} />
-        <Route path="/signin" element={<SignIn />} />
-        <Route path="/signup" element={<SignUp />} />
+        <Route path="/welcome" element={<RedirectIfAuthed><Welcome /></RedirectIfAuthed>} />
+        <Route path="/signin" element={<RedirectIfAuthed><SignIn /></RedirectIfAuthed>} />
+        <Route path="/signup" element={<AllowGuestUpgrade><SignUp /></AllowGuestUpgrade>} />
         <Route path="/verify" element={<VerifyEmail />} />
-        <Route path="/setup" element={<Onboarding />} />
+        <Route path="/setup" element={<RequireAnySession><Onboarding /></RequireAnySession>} />
       </Route>
 
       {/* ── In-app — inside the TopNav shell ────────────────────────── */}
-      <Route element={<AppShell />}>
+      <Route element={<RequireSession><AppShell /></RequireSession>}>
         <Route path="/plan" element={<Dashboard />} />
         <Route path="/plan/task/:id" element={<Microtasks />} />
 

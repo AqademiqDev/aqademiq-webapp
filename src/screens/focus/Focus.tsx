@@ -1,17 +1,31 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import IceTimer from '../../components/brand/IceTimer';
-import PrismGlyph, { PRISM_MODES, type PrismModeId } from '../../components/brand/PrismGlyph';
+import PrismGlyph, { PRISM_MODES } from '../../components/brand/PrismGlyph';
 import AdaCube from '../../components/brand/AdaCube';
 import Icon from '../../components/core/Icon';
 import Popover from '../../components/overlay/Popover';
 import Toggle from '../../components/core/Toggle';
+import { AsyncSection, EmptyState, errorMessage } from '../../components/core/Async';
 import SetTimeDialog from './SetTimeDialog';
 import GuestSavePrompt from './GuestSavePrompt';
-import { LINKABLE_TASKS, MOOD_LABELS, moodExpr, moodMelt } from '../../data/tasks';
+import { MOOD_LABELS, moodExpr, moodMelt } from '../../data/tasks';
+import type { LinkableTask } from '../../data/tasks';
+import {
+  useCheckpointFocusSession,
+  useCompleteFocusSession,
+  useLinkableTasks,
+  usePrismModes,
+  usePrismPreferences,
+  useStartFocusSession,
+  useUpdatePrismPreferences,
+} from '../../hooks/data';
 import { useFocusTimer } from '../../hooks/useFocusTimer';
 import { useAppState } from '../../hooks/useAppState';
+import { todayIso } from '../../lib/format';
+import { splitOccurrenceId } from '../../lib/mappers';
+import type { PrismModeDto } from '../../lib/api';
 
 /* ─────────────────────────────────────────────────────────────────────────
    Section 04 — Focus (frames 04.1–04.7).
@@ -20,24 +34,200 @@ import { useAppState } from '../../hooks/useAppState';
    (04.1), running (04.5), frozen (04.6) and done (04.7) off the timer's
    status; the Prism picker (04.2), Set time (04.3) and Link a task (04.4)
    are local overlays.
+
+   The clock stays client-side — `useFocusTimer` owns the tick and calls the
+   handlers below to open, checkpoint and complete the server session row.
    ───────────────────────────────────────────────────────────────────────── */
+
+/** Shown until the catalogue loads, so the pill is never blank. */
+const SILENCE: PrismModeDto = { key: 'none', label: 'No sound', description: 'Silence', url: null };
+
+/* The frames give every Prism row a colour, but the served catalogue is keyed
+   by sound rather than by the design's five names — so the swatches are handed
+   out in catalogue order and silence always takes the muted one. */
+const MUTED_SWATCH = PRISM_MODES[PRISM_MODES.length - 1].color;
+const SWATCHES = PRISM_MODES.filter((m) => m.id !== 'none').map((m) => m.color);
+
+function prismColor(modes: PrismModeDto[], key: string): string {
+  if (key === 'none') return MUTED_SWATCH;
+  const i = modes.filter((m) => m.key !== 'none').findIndex((m) => m.key === key);
+  return SWATCHES[(i < 0 ? 0 : i) % SWATCHES.length];
+}
+
+/** Prism streams are HLS; only play where the browser handles that natively. */
+let nativeHls: boolean | null = null;
+function playable(url: string | null): url is string {
+  if (!url) return false;
+  if (!/\.m3u8(\?|$)/i.test(url)) return true;
+  if (nativeHls === null) {
+    nativeHls = document.createElement('audio').canPlayType('application/vnd.apple.mpegurl') !== '';
+  }
+  return nativeHls;
+}
 
 export default function Focus() {
   const navigate = useNavigate();
   const { guest } = useAppState();
-  const timer = useFocusTimer(25);
 
-  const [mode, setMode] = useState<PrismModeId>('deep');
-  const [autoplay, setAutoplay] = useState(true);
-  const [linkedId, setLinkedId] = useState<string | null>(LINKABLE_TASKS[0].id);
+  const linkable = useLinkableTasks();
+  const modesQuery = usePrismModes();
+  const prefs = usePrismPreferences();
+  const updatePrefs = useUpdatePrismPreferences();
+
+  const startSession = useStartFocusSession();
+  const checkpoint = useCheckpointFocusSession();
+  const completeSession = useCompleteFocusSession();
+
+  const [modeKey, setModeKey] = useState<string | null>(null);
+  const [autoplayLocal, setAutoplayLocal] = useState<boolean | null>(null);
+  /** null until the picker is touched, so the first task links by default. */
+  const [choice, setChoice] = useState<{ id: string | null } | null>(null);
   const [modeOpen, setModeOpen] = useState(false);
   const [timeOpen, setTimeOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [sessionMood, setSessionMood] = useState<number | null>(3);
   const [savePromptOpen, setSavePromptOpen] = useState(false);
+  /** The task as it was when the session opened — the plan refetches on finish. */
+  const [sessionTask, setSessionTask] = useState<LinkableTask | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [prefsError, setPrefsError] = useState<string | null>(null);
 
-  const prism = PRISM_MODES.find((m) => m.id === mode)!;
-  const linked = LINKABLE_TASKS.find((t) => t.id === linkedId) ?? null;
+  const sessionId = useRef<string | null>(null);
+  const opening = useRef<Promise<string | null> | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const modes = useMemo(() => modesQuery.data ?? [], [modesQuery.data]);
+  const fallbackMode = modes.find((m) => m.key !== 'none') ?? modes[0] ?? SILENCE;
+  const mode = modes.find((m) => m.key === (modeKey ?? prefs.data?.default_mode)) ?? fallbackMode;
+  const swatch = prismColor(modes, mode.key);
+  const autoplay = autoplayLocal ?? prefs.data?.play_in_focus ?? true;
+
+  const items = linkable.items;
+  const linkedId = choice ? choice.id : items[0]?.id ?? null;
+  const selected = useMemo(
+    () => items.find((t) => t.id === linkedId) ?? null,
+    [items, linkedId],
+  );
+
+  /* ── Session plumbing ───────────────────────────────────────────── */
+
+  const currentSession = useCallback(async () => {
+    if (sessionId.current) return sessionId.current;
+    if (opening.current) return await opening.current;
+    return null;
+  }, []);
+
+  const pushCheckpoint = useCallback(
+    async (elapsedSec: number, status: 'RUNNING' | 'PAUSED') => {
+      const id = await currentSession();
+      if (!id) return;
+      try {
+        await checkpoint.mutateAsync({ id, elapsedSec, status });
+        setSessionError(null);
+      } catch (err) {
+        setSessionError(errorMessage(err));
+      }
+    },
+    [currentSession, checkpoint],
+  );
+
+  /** Finalises the row; the server marks the linked task done and invalidates. */
+  const finish = useCallback(
+    async (elapsedSec: number, moodIndex?: number) => {
+      const id = await currentSession();
+      if (!id) return;
+      try {
+        await completeSession.mutateAsync({ id, elapsedSec, moodIndex });
+        setSessionError(null);
+      } catch (err) {
+        setSessionError(errorMessage(err));
+      }
+    },
+    [currentSession, completeSession],
+  );
+
+  // no endpoint: focus sessions cannot be cancelled, only checkpointed — so
+  // letting go of a row parks it at the minutes it actually reached.
+  const parkSession = useCallback(
+    (elapsedSec: number) => {
+      const pending = sessionId.current ? Promise.resolve(sessionId.current) : opening.current;
+      sessionId.current = null;
+      opening.current = null;
+      if (!pending) return;
+      void pending.then((id) => {
+        if (id) checkpoint.mutate({ id, elapsedSec, status: 'PAUSED' });
+      });
+    },
+    [checkpoint],
+  );
+
+  const timer = useFocusTimer(25, {
+    onStart: (plannedMin) => {
+      setSessionError(null);
+      setSessionTask(selected);
+      // The link picker holds an occurrence id; the session wants the series.
+      const parts = selected ? splitOccurrenceId(selected.id) : null;
+      opening.current = startSession
+        .mutateAsync({
+          planned_min: plannedMin,
+          prism_mode: mode.key,
+          task_id: parts?.seriesId,
+          task_date: parts ? parts.date ?? todayIso() : undefined,
+        })
+        .then((s) => {
+          sessionId.current = s.id;
+          return s.id;
+        })
+        .catch((err: unknown) => {
+          setSessionError(errorMessage(err));
+          return null;
+        });
+    },
+    // Freeze / resume / tab-hide / unmount only — never on a tick.
+    onCheckpoint: (elapsedSec, status) => void pushCheckpoint(elapsedSec, status),
+    onComplete: (elapsedSec) => void finish(elapsedSec, sessionMood ?? undefined),
+  });
+
+  /* Prism playback. Modes whose stream is still null stay selectable — they
+     are stored on the session — they just have nothing to play. */
+  const streamUrl = playable(mode.url) ? mode.url : null;
+  const volume = Math.min(1, Math.max(0, (prefs.data?.volume_level ?? 50) / 100));
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (!streamUrl || !autoplay || timer.status !== 'running') {
+      el.pause();
+      return;
+    }
+    el.volume = volume;
+    // Autoplay policies can refuse this; the session is unaffected either way.
+    void el.play().catch(() => undefined);
+  }, [streamUrl, autoplay, volume, timer.status]);
+
+  const restart = () => {
+    sessionId.current = null;
+    opening.current = null;
+    setSessionTask(null);
+    setSessionMood(3);
+    setSessionError(null);
+    timer.reset();
+  };
+
+  const setAutoplay = (next: boolean) => {
+    setAutoplayLocal(next);
+    setPrefsError(null);
+    updatePrefs.mutate(
+      { play_in_focus: next },
+      {
+        onError: (err) => {
+          setAutoplayLocal(!next);
+          setPrefsError(errorMessage(err));
+        },
+      },
+    );
+  };
+
   const dimmed = modeOpen || linkOpen;
 
   /* ── 04.7 Session done — full-bleed celebratory ground ─────────── */
@@ -72,15 +262,17 @@ export default function Focus() {
               marginBottom: 24,
             }}
           >
-            <PrismGlyph size={15} color={prism.color} muted={prism.id === 'none'} />
-            {prism.name} · Prism
+            <PrismGlyph size={15} color={swatch} muted={mode.key === 'none'} />
+            {mode.label} · Prism
           </div>
 
           <div style={{ font: '800 32px var(--font-sans)', letterSpacing: '-.5px', marginBottom: 6 }}>
             Session done
           </div>
           <div style={{ font: '600 12.5px var(--font-sans)', color: 'rgba(36,24,52,.58)', marginBottom: 22 }}>
-            {linked ? `${linked.title} · ${linked.meta.split(' · ')[0]}` : 'Focus without a task'}
+            {sessionTask
+              ? `${sessionTask.title} · ${sessionTask.meta.split(' · ')[0]}`
+              : 'Focus without a task'}
           </div>
 
           <div style={{ font: '800 56px var(--font-sans)', letterSpacing: '.5px', lineHeight: 1 }}>
@@ -110,7 +302,12 @@ export default function Focus() {
                     role="radio"
                     aria-checked={on}
                     aria-label={label}
-                    onClick={() => setSessionMood(rating)}
+                    disabled={completeSession.isPending}
+                    // Re-sends the completion so the mood lands on the row.
+                    onClick={() => {
+                      setSessionMood(rating);
+                      void finish(timer.elapsedSec, rating);
+                    }}
                     className="aq-press focus-ring"
                     style={{
                       padding: on ? 4 : 3,
@@ -126,6 +323,20 @@ export default function Focus() {
               })}
             </div>
           </div>
+
+          {sessionError && (
+            <div
+              role="alert"
+              style={{
+                font: '700 11.5px/1.5 var(--font-sans)',
+                color: '#8a1f3a',
+                maxWidth: 360,
+                marginBottom: 14,
+              }}
+            >
+              {sessionError}
+            </div>
+          )}
 
           <button
             type="button"
@@ -148,7 +359,7 @@ export default function Focus() {
           </button>
           <button
             type="button"
-            onClick={timer.reset}
+            onClick={restart}
             className="focus-ring"
             style={{ font: '700 12px var(--font-sans)', color: 'rgba(36,24,52,.58)', borderRadius: 4 }}
           >
@@ -165,6 +376,7 @@ export default function Focus() {
   const running = timer.status === 'running';
   const paused = timer.status === 'paused';
   const active = running || paused;
+  const linked = active ? sessionTask : selected;
 
   return (
     <>
@@ -201,7 +413,7 @@ export default function Focus() {
             }}
           >
             <span style={{ fontSize: 13 }}>◈</span>
-            {prism.name}
+            {mode.label}
           </button>
           <button
             type="button"
@@ -299,6 +511,8 @@ export default function Focus() {
 
         {active ? (
           <div style={{ display: 'flex', gap: 12 }}>
+            {/* The local clock is authoritative, so these stay live while a
+                checkpoint is in flight. */}
             <SessionButton
               icon={paused ? 'play_arrow' : 'ac_unit'}
               label={paused ? 'Resume' : 'Freeze'}
@@ -311,6 +525,7 @@ export default function Focus() {
           <button
             type="button"
             onClick={timer.start}
+            disabled={startSession.isPending}
             className="aq-press aq-darken focus-ring"
             style={{
               display: 'flex',
@@ -329,6 +544,23 @@ export default function Focus() {
             Start focus
           </button>
         )}
+
+        {sessionError && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 14,
+              font: '700 11.5px/1.5 var(--font-sans)',
+              color: 'var(--aq-danger)',
+              maxWidth: 340,
+            }}
+          >
+            {sessionError}
+          </div>
+        )}
+
+        {/* Prism stream — not rendered by the browser, no `controls`. */}
+        <audio ref={audioRef} src={streamUrl ?? undefined} loop preload="none" />
       </main>
 
       {/* ── 04.2 Prism mode picker ─────────────────────────────────── */}
@@ -350,50 +582,61 @@ export default function Focus() {
         >
           PRISM MODE
         </div>
-        {PRISM_MODES.map((m) => {
-          const on = m.id === mode;
-          return (
-            <button
-              key={m.id}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => {
-                setMode(m.id);
-                setModeOpen(false);
-              }}
-              className="focus-ring"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                padding: '13px 16px',
-                borderBottom: '1px solid var(--border-hairline)',
-                background: on ? 'var(--accent-soft)' : 'transparent',
-                width: '100%',
-                textAlign: 'left',
-              }}
-            >
-              <PrismGlyph size={20} color={m.color} muted={m.id === 'none'} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    font: `${on ? 800 : 700} 13.5px var(--font-sans)`,
-                    color: on ? 'var(--accent)' : 'var(--text-primary)',
-                  }}
-                >
-                  {m.name}
+
+        <AsyncSection
+          query={modesQuery}
+          loadingLabel="Loading modes…"
+          empty={{
+            when: modes.length === 0,
+            node: <EmptyState icon="graphic_eq" title="No modes yet" caption="Prism sounds aren't available right now." />,
+          }}
+        >
+          {modes.map((m) => {
+            const on = m.key === mode.key;
+            return (
+              <button
+                key={m.key}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => {
+                  setModeKey(m.key);
+                  setModeOpen(false);
+                }}
+                className="focus-ring"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '13px 16px',
+                  borderBottom: '1px solid var(--border-hairline)',
+                  background: on ? 'var(--accent-soft)' : 'transparent',
+                  width: '100%',
+                  textAlign: 'left',
+                }}
+              >
+                <PrismGlyph size={20} color={prismColor(modes, m.key)} muted={m.key === 'none'} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      font: `${on ? 800 : 700} 13.5px var(--font-sans)`,
+                      color: on ? 'var(--accent)' : 'var(--text-primary)',
+                    }}
+                  >
+                    {m.label}
+                  </div>
+                  <div
+                    style={{ font: '600 10px var(--font-sans)', color: 'var(--text-secondary)', marginTop: 1 }}
+                  >
+                    {m.description}
+                  </div>
                 </div>
-                <div
-                  style={{ font: '600 10px var(--font-sans)', color: 'var(--text-secondary)', marginTop: 1 }}
-                >
-                  {m.desc}
-                </div>
-              </div>
-              {on && <Icon name="check_circle" size={18} color="var(--accent)" />}
-            </button>
-          );
-        })}
+                {on && <Icon name="check_circle" size={18} color="var(--accent)" />}
+              </button>
+            );
+          })}
+        </AsyncSection>
+
         <div
           style={{
             borderTop: '1px solid var(--border-hairline)',
@@ -405,8 +648,27 @@ export default function Focus() {
         >
           <Icon name="music_note" size={16} color="var(--text-secondary)" />
           <span style={{ flex: 1, font: '700 12px var(--font-sans)', textAlign: 'left' }}>Autoplay Prism</span>
-          <Toggle checked={autoplay} onChange={setAutoplay} small aria-label="Autoplay Prism" />
+          <Toggle
+            checked={autoplay}
+            onChange={setAutoplay}
+            disabled={updatePrefs.isPending}
+            small
+            aria-label="Autoplay Prism"
+          />
         </div>
+        {prefsError && (
+          <div
+            role="alert"
+            style={{
+              padding: '0 16px 12px',
+              font: '700 11px/1.5 var(--font-sans)',
+              color: 'var(--aq-danger)',
+              textAlign: 'left',
+            }}
+          >
+            {prefsError}
+          </div>
+        )}
       </Popover>
 
       {/* ── 04.4 Link a task ───────────────────────────────────────── */}
@@ -446,52 +708,67 @@ export default function Focus() {
           </button>
         </div>
 
-        {LINKABLE_TASKS.map((t) => {
-          const on = t.id === linkedId;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => {
-                setLinkedId(t.id);
-                setLinkOpen(false);
-              }}
-              className="focus-ring"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 11,
-                padding: '12px 16px',
-                borderBottom: '1px solid var(--border-hairline)',
-                background: on ? 'var(--accent-soft)' : 'transparent',
-                width: '100%',
-              }}
-            >
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.color, flexShrink: 0 }} />
-              <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
-                <div
-                  style={{
-                    font: `${on ? 800 : 700} 13px var(--font-sans)`,
-                    color: on ? 'var(--accent)' : 'var(--text-primary)',
-                  }}
-                >
-                  {t.title}
+        <AsyncSection
+          query={linkable}
+          loadingLabel="Loading today…"
+          empty={{
+            when: items.length === 0,
+            node: (
+              <EmptyState
+                icon="task_alt"
+                title="Nothing open today"
+                caption="Nothing left to link — focus on its own instead."
+              />
+            ),
+          }}
+        >
+          {items.map((t) => {
+            const on = t.id === linkedId;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => {
+                  setChoice({ id: t.id });
+                  setLinkOpen(false);
+                }}
+                className="focus-ring"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 11,
+                  padding: '12px 16px',
+                  borderBottom: '1px solid var(--border-hairline)',
+                  background: on ? 'var(--accent-soft)' : 'transparent',
+                  width: '100%',
+                }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.color, flexShrink: 0 }} />
+                <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                  <div
+                    style={{
+                      font: `${on ? 800 : 700} 13px var(--font-sans)`,
+                      color: on ? 'var(--accent)' : 'var(--text-primary)',
+                    }}
+                  >
+                    {t.title}
+                  </div>
+                  <div style={{ font: '600 10px var(--font-sans)', color: 'var(--text-secondary)', marginTop: 1 }}>
+                    {t.meta}
+                  </div>
                 </div>
-                <div style={{ font: '600 10px var(--font-sans)', color: 'var(--text-secondary)', marginTop: 1 }}>
-                  {t.meta}
-                </div>
-              </div>
-              {on && <Icon name="check_circle" size={18} color="var(--accent)" />}
-            </button>
-          );
-        })}
+                {on && <Icon name="check_circle" size={18} color="var(--accent)" />}
+              </button>
+            );
+          })}
+        </AsyncSection>
 
         <button
           type="button"
           onClick={() => {
-            setLinkedId(null);
+            setChoice({ id: null });
             setLinkOpen(false);
           }}
           className="focus-ring"
@@ -517,6 +794,10 @@ export default function Focus() {
         onClose={() => setTimeOpen(false)}
         minutes={timer.minutes}
         onApply={(m) => {
+          // Re-timing restarts the clock, so any open row is let go of first.
+          if (active) parkSession(timer.elapsedSec);
+          setSessionTask(null);
+          setSessionError(null);
           timer.setMinutes(m);
           setTimeOpen(false);
         }}

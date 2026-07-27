@@ -1,7 +1,8 @@
 import Toggle from '../../../components/core/Toggle';
 import Segmented from '../../../components/core/Segmented';
-import { PanelHead, Row } from '../Settings';
+import { InlineError, PanelHead, Row } from '../Settings';
 import { useAppState, type Accent, type Warmth } from '../../../hooks/useAppState';
+import { useSettings } from '../../../hooks/data';
 
 /* Frame 13.1 — Appearance. */
 
@@ -14,6 +15,12 @@ const ACCENTS: { id: Accent; hex: string }[] = [
 export default function Appearance() {
   const { theme, accent, warmth, set, toggleTheme } = useAppState();
 
+  /* Dark mode is the one appearance preference the server stores
+     (`/me/settings.theme_mode`, written through useAppState). Reading the query
+     here is only so the row can show the loading / failed states of that same
+     record — the toggle itself still goes through useAppState. */
+  const settings = useSettings();
+
   return (
     <>
       <PanelHead title="Appearance" sub="Tune Aqademiq to your sanctuary." />
@@ -22,9 +29,18 @@ export default function Appearance() {
         title="Dark mode"
         sub="Near-black paper, periwinkle leads"
         padding="14px 0"
-        control={<Toggle checked={theme === 'dark'} onChange={toggleTheme} aria-label="Dark mode" />}
+        control={
+          <Toggle
+            checked={theme === 'dark'}
+            onChange={toggleTheme}
+            disabled={settings.isLoading}
+            aria-label="Dark mode"
+          />
+        }
       />
+      <InlineError error={settings.isError ? settings.error : null} />
 
+      {/* no endpoint: accent has no server field — it stays a local preference. */}
       <div style={{ padding: '16px 0', borderBottom: '1px solid var(--border-hairline)' }}>
         <div style={{ font: '800 13px var(--font-sans)', marginBottom: 12 }}>Brand accent</div>
         <div role="radiogroup" aria-label="Brand accent" style={{ display: 'flex', gap: 14 }}>
@@ -51,6 +67,7 @@ export default function Appearance() {
         </div>
       </div>
 
+      {/* no endpoint: warmth has no server field either — also local-only. */}
       <div style={{ padding: '16px 0' }}>
         <div style={{ font: '800 13px var(--font-sans)', marginBottom: 12 }}>Background warmth</div>
         <Segmented

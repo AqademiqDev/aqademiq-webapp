@@ -1,29 +1,108 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Button from '../../components/core/Button';
 import Icon from '../../components/core/Icon';
 import Input, { Textarea } from '../../components/core/Input';
 import Modal from '../../components/overlay/Modal';
-import { TYPE_ICON, type SuggestionType } from '../../data/suggestions';
+import { errorMessage } from '../../components/core/Async';
+import { InlineError } from './parts';
+import { useBoardMeta, useCreateBoardPost } from '../../hooks/data';
+import { TYPE_BY_KEY, TYPE_ICON, type SuggestionType } from '../../data/suggestions';
 
-/* Frame 06b.3 — Make a suggestion (sheet). Modal, max-width 520. */
+/* Frame 06b.3 — Make a suggestion (sheet). Modal, max-width 520.
+   POSTs `/v1/feedback/posts`; the server caps titles at 3–140 chars and the
+   body at 5000, so the same limits are enforced before the call. */
 
-const TYPES: SuggestionType[] = ['Feature', 'Improvement', 'Bug'];
+const TITLE_MIN = 3;
+const TITLE_MAX = 140;
+const BODY_MAX = 5000;
 
-export default function SuggestModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [type, setType] = useState<SuggestionType>('Feature');
-  const [title, setTitle] = useState('Sync deadlines from Google Calendar');
-  const [details, setDetails] = useState(
-    "Auto-import assignment due dates so I don't re-enter them each week — one less thing to forget.",
-  );
-  const [error, setError] = useState('');
+interface TypeOption {
+  key: string;
+  label: SuggestionType;
+}
+
+/** Drawn while `/feedback/meta` is in flight so the type row never reflows. */
+const DEFAULT_TYPES: TypeOption[] = [
+  { key: 'feature', label: 'Feature' },
+  { key: 'improvement', label: 'Improvement' },
+  { key: 'bug', label: 'Bug' },
+];
+
+export default function SuggestModal({
+  open,
+  onClose,
+  initialCategory,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Pre-selects a category — the banner's "Found a bug?" opens on Bug. */
+  initialCategory?: string;
+}) {
+  const meta = useBoardMeta();
+  const create = useCreateBoardPost();
+
+  const types = useMemo<TypeOption[]>(() => {
+    const mapped = (meta.data?.categories ?? [])
+      .filter((c) => TYPE_BY_KEY[c.key])
+      .map((c) => ({ key: c.key, label: TYPE_BY_KEY[c.key] }));
+    return mapped.length ? mapped : DEFAULT_TYPES;
+  }, [meta.data]);
+
+  const [category, setCategory] = useState(initialCategory ?? DEFAULT_TYPES[0].key);
+  const [title, setTitle] = useState('');
+  const [details, setDetails] = useState('');
+  const [titleError, setTitleError] = useState('');
+  const [detailsError, setDetailsError] = useState('');
+  const [formError, setFormError] = useState('');
+
+  /* Each opening starts from a clean sheet, on the requested category. */
+  useEffect(() => {
+    if (!open) return;
+    setCategory(initialCategory ?? DEFAULT_TYPES[0].key);
+    setTitle('');
+    setDetails('');
+    setTitleError('');
+    setDetailsError('');
+    setFormError('');
+  }, [open, initialCategory]);
+
+  /* If the server's vocabulary does not carry the selected key, fall back. */
+  useEffect(() => {
+    if (types.some((t) => t.key === category)) return;
+    setCategory(types[0].key);
+  }, [types, category]);
 
   function share() {
-    if (!title.trim()) {
-      setError('Give your suggestion a title.');
+    const t = title.trim();
+    const d = details.trim();
+
+    if (!t) {
+      setTitleError('Give your suggestion a title.');
       return;
     }
-    setError('');
-    onClose();
+    if (t.length < TITLE_MIN) {
+      setTitleError(`Titles need at least ${TITLE_MIN} characters.`);
+      return;
+    }
+    if (t.length > TITLE_MAX) {
+      setTitleError(`Keep the title under ${TITLE_MAX} characters.`);
+      return;
+    }
+    if (d.length > BODY_MAX) {
+      setDetailsError(`Keep the details under ${BODY_MAX} characters.`);
+      return;
+    }
+    setTitleError('');
+    setDetailsError('');
+    setFormError('');
+
+    create.mutate(
+      { title: t, body: d || undefined, category },
+      {
+        onSuccess: () => onClose(),
+        onError: (err) => setFormError(errorMessage(err)),
+      },
+    );
   }
 
   return (
@@ -41,15 +120,15 @@ export default function SuggestModal({ open, onClose }: { open: boolean; onClose
       </div>
 
       <div role="radiogroup" aria-label="Suggestion type" style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        {TYPES.map((t) => {
-          const on = type === t;
+        {types.map((t) => {
+          const on = category === t.key;
           return (
             <button
-              key={t}
+              key={t.key}
               type="button"
               role="radio"
               aria-checked={on}
-              onClick={() => setType(t)}
+              onClick={() => setCategory(t.key)}
               className="aq-press focus-ring"
               style={{
                 flex: 1,
@@ -65,8 +144,8 @@ export default function SuggestModal({ open, onClose }: { open: boolean; onClose
                 font: '800 12.5px var(--font-sans)',
               }}
             >
-              <Icon name={TYPE_ICON[t]} size={16} />
-              {t}
+              <Icon name={TYPE_ICON[t.label]} size={16} />
+              {t.label}
             </button>
           );
         })}
@@ -76,10 +155,13 @@ export default function SuggestModal({ open, onClose }: { open: boolean; onClose
         label="TITLE"
         value={title}
         focusedStyle
-        error={error}
+        error={titleError}
+        maxLength={TITLE_MAX}
+        placeholder="Sync deadlines from Google Calendar"
         onChange={(e) => {
           setTitle(e.target.value);
-          setError('');
+          setTitleError('');
+          setFormError('');
         }}
         style={{ fontSize: 14 }}
         wrapperStyle={{ marginBottom: 16 }}
@@ -88,11 +170,20 @@ export default function SuggestModal({ open, onClose }: { open: boolean; onClose
       <Textarea
         label="DETAILS (OPTIONAL)"
         value={details}
-        onChange={(e) => setDetails(e.target.value)}
+        error={detailsError}
+        maxLength={BODY_MAX}
+        placeholder="Auto-import assignment due dates so I don't re-enter them each week — one less thing to forget."
+        onChange={(e) => {
+          setDetails(e.target.value);
+          setDetailsError('');
+          setFormError('');
+        }}
         wrapperStyle={{ marginBottom: 22 }}
       />
 
-      <Button full onClick={share}>
+      {formError && <InlineError message={formError} style={{ marginTop: -14, marginBottom: 14 }} />}
+
+      <Button full onClick={share} loading={create.isPending} disabled={create.isPending}>
         Share suggestion
       </Button>
     </Modal>

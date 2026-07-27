@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { Content } from '../../layouts/AppShell';
@@ -7,13 +7,22 @@ import Button from '../../components/core/Button';
 import Card from '../../components/core/Card';
 import Icon from '../../components/core/Icon';
 import { EyebrowLabel } from '../../components/core/Misc';
+import { AsyncSection, errorMessage } from '../../components/core/Async';
 import Popover from '../../components/overlay/Popover';
 import SuggestModal from './SuggestModal';
-import { StatusChip, SuggestionRow, VotePill } from './parts';
+import { InlineError, SuggestionRow, toSuggestion } from './parts';
 import {
-  BOARD_LANES,
-  SUGGESTIONS,
+  useBoardCanParticipate,
+  useBoardMeta,
+  useBoardPosts,
+  useBoardRoadmap,
+  useToggleBoardVote,
+} from '../../hooks/data';
+import type { BoardPostDto } from '../../lib/api';
+import {
+  STATUS_BY_KEY,
   STATUS_STYLE,
+  TYPE_BY_KEY,
   TYPE_ICON,
   type SuggestionStatus,
 } from '../../data/suggestions';
@@ -21,48 +30,65 @@ import {
 /* ─────────────────────────────────────────────────────────────────────────
    Section 06b — Feedback (frames 06b.1–06b.5).
    List and Board views selected by ?view=, plus the suggest modal and the
-   sort popover.
+   sort popover. Everything reads `/v1/feedback/*`; posts are addressed by
+   their public `ref` number.
    ───────────────────────────────────────────────────────────────────────── */
 
-const FILTERS: (SuggestionStatus | 'All')[] = [
-  'All',
-  'Under review',
-  'Planned',
-  'In progress',
-  'Shipped',
-  'Declined',
-];
+type SortKey = 'top' | 'new';
 
-/** The board's community total, as the frame's eyebrow reads. The mock list
- *  holds the most-voted slice of it; filtering falls back to the real count. */
-const TOTAL_SUGGESTIONS = 24;
+interface StatusOption {
+  key: string;
+  label: string;
+}
+
+/** Drawn while `/feedback/meta` is in flight, so the chip row never reflows. */
+const DEFAULT_STATUSES: StatusOption[] = [
+  'under_review',
+  'planned',
+  'in_progress',
+  'shipped',
+  'declined',
+].map((key) => ({ key, label: STATUS_BY_KEY[key] }));
 
 export default function Feedback() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const board = params.get('view') === 'board';
 
-  const [filter, setFilter] = useState<SuggestionStatus | 'All'>('All');
+  const [status, setStatus] = useState('');
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<'voted' | 'newest'>('voted');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [sort, setSort] = useState<SortKey>('top');
   const [sortOpen, setSortOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
-  const [votes, setVotes] = useState<Record<string, boolean>>(
-    Object.fromEntries(SUGGESTIONS.filter((s) => s.voted).map((s) => [s.id, true])),
-  );
+  const [suggestCategory, setSuggestCategory] = useState<string | undefined>(undefined);
 
-  /* Search filters the visible list client-side (brief, pre-resolved item 9). */
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = SUGGESTIONS.filter(
-      (s) =>
-        (filter === 'All' || s.status === filter) &&
-        (!q || s.title.toLowerCase().includes(q) || (s.body ?? '').toLowerCase().includes(q)),
-    );
-    return sort === 'voted' ? [...list].sort((a, b) => b.votes - a.votes) : list;
-  }, [filter, query, sort]);
+  const meta = useBoardMeta();
 
-  const toggleVote = (id: string) => setVotes((v) => ({ ...v, [id]: !v[id] }));
+  /* The search box drives the `q` param rather than filtering locally. */
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [query]);
+
+  const statusOptions = useMemo<StatusOption[]>(() => {
+    const fromMeta = (meta.data?.statuses ?? []).map((s) => ({
+      key: s.key,
+      label: STATUS_BY_KEY[s.key] ?? s.label,
+    }));
+    return [{ key: '', label: 'All' }, ...(fromMeta.length ? fromMeta : DEFAULT_STATUSES)];
+  }, [meta.data]);
+
+  // Posting, voting and commenting all 403 for guests ("Create an account
+  // to …"), so every write control routes them to the upgrade path instead of
+  // letting the request fail.
+  const canParticipate = useBoardCanParticipate();
+
+  const openSuggest = (category?: string) => {
+    if (!canParticipate) return navigate('/signup');
+    setSuggestCategory(category);
+    setSuggestOpen(true);
+  };
 
   const backButton = (
     <button
@@ -137,7 +163,7 @@ export default function Feedback() {
       }}
     >
       <Icon name="swap_vert" size={17} />
-      {sort === 'voted' ? 'Top' : 'New'}
+      {sort === 'top' ? 'Top' : 'New'}
     </button>
   );
 
@@ -163,7 +189,7 @@ export default function Feedback() {
               {sortPill}
               <Button
                 icon="add"
-                onClick={() => setSuggestOpen(true)}
+                onClick={() => openSuggest()}
                 style={{ width: 'auto', padding: '0 18px', height: 42 }}
               >
                 Suggest
@@ -171,71 +197,14 @@ export default function Feedback() {
             </div>
           </div>
 
-          <div className="aq-scroll" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto' }}>
-            {BOARD_LANES.map((lane) => (
-              <div key={lane.name} className="aq-board-lane" style={{ flex: 1 }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '9px 13px',
-                    background: 'var(--surface-page)',
-                    borderRadius: 12,
-                    marginBottom: 10,
-                  }}
-                >
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: lane.dot }} />
-                  <span style={{ flex: 1, font: '800 12px var(--font-sans)' }}>{lane.name}</span>
-                  <span style={{ font: '700 11px var(--font-sans)', color: 'var(--text-dim)' }}>
-                    {lane.cards.length}
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {lane.cards.map((c) => (
-                    <Card
-                      key={c.title}
-                      padding="12px 13px"
-                      hoverable
-                      onClick={c.id ? () => navigate(`/feedback/${c.id}`) : undefined}
-                      style={{
-                        cursor: c.id ? 'pointer' : undefined,
-                        opacity: lane.status === 'Declined' ? 0.72 : 1,
-                        borderLeft:
-                          lane.status === 'Planned' || lane.status === 'In progress' || lane.status === 'Shipped'
-                            ? `3px solid ${lane.dot}`
-                            : undefined,
-                      }}
-                    >
-                      <div style={{ font: '800 12px/1.3 var(--font-sans)', marginBottom: 7 }}>{c.title}</div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          font: '600 10px var(--font-sans)',
-                          color: 'var(--text-dim)',
-                        }}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <Icon name={TYPE_ICON[c.type]} size={13} />
-                          {c.type}
-                        </span>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                          <Icon name={lane.status === 'Shipped' ? 'check' : 'keyboard_arrow_up'} size={14} />
-                          {c.votes}
-                        </span>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <BoardLanes sort={sort} onOpen={(ref) => navigate(`/feedback/${ref}`)} />
         </Content>
 
-        <SuggestModal open={suggestOpen} onClose={() => setSuggestOpen(false)} />
+        <SuggestModal
+          open={suggestOpen}
+          onClose={() => setSuggestOpen(false)}
+          initialCategory={suggestCategory}
+        />
         <SortPopover open={sortOpen} onClose={() => setSortOpen(false)} value={sort} onChange={setSort} />
       </>
     );
@@ -260,7 +229,7 @@ export default function Feedback() {
             </div>
             <Button
               icon="add"
-              onClick={() => setSuggestOpen(true)}
+              onClick={() => openSuggest()}
               style={{ width: 'auto', padding: '0 20px', height: 42 }}
             >
               Make a suggestion
@@ -292,10 +261,24 @@ export default function Feedback() {
                 whiteSpace: 'nowrap',
               }}
             >
-              <button type="button" className="focus-ring" style={{ font: '800 11.5px var(--font-sans)', color: 'var(--accent)', borderRadius: 4 }}>
+              {/* no endpoint: there is no research-panel signup route in /v1 — hand off to support. */}
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href =
+                    'mailto:support@aqademiq.com?subject=Join%20user%20research';
+                }}
+                className="focus-ring"
+                style={{ font: '800 11.5px var(--font-sans)', color: 'var(--accent)', borderRadius: 4 }}
+              >
                 Join user research →
               </button>
-              <button type="button" className="focus-ring" style={{ font: '800 11.5px var(--font-sans)', color: 'var(--accent)', borderRadius: 4 }}>
+              <button
+                type="button"
+                onClick={() => openSuggest('bug')}
+                className="focus-ring"
+                style={{ font: '800 11.5px var(--font-sans)', color: 'var(--accent)', borderRadius: 4 }}
+              >
                 Found a bug?
               </button>
             </div>
@@ -339,21 +322,21 @@ export default function Feedback() {
 
           {/* Status filter chips */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-            {FILTERS.map((f) => {
-              const on = filter === f;
-              const style = f === 'All' ? null : STATUS_STYLE[f];
+            {statusOptions.map((f) => {
+              const on = status === f.key;
+              const style = f.key ? STATUS_STYLE[f.label as SuggestionStatus] : null;
               return (
                 <button
-                  key={f}
+                  key={f.key || 'all'}
                   type="button"
-                  onClick={() => setFilter(f)}
+                  onClick={() => setStatus(f.key)}
                   aria-pressed={on}
                   className="aq-press focus-ring"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 7,
-                    padding: f === 'All' ? '7px 15px' : '7px 14px',
+                    padding: f.key ? '7px 14px' : '7px 15px',
                     borderRadius: 100,
                     font: '800 11.5px var(--font-sans)',
                     ...(on
@@ -368,37 +351,208 @@ export default function Feedback() {
                   {style && (
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: on ? '#fff' : style.dot }} />
                   )}
-                  {f}
+                  {f.label}
                 </button>
               );
             })}
           </div>
 
-          <EyebrowLabel style={{ marginBottom: 10 }}>
-            SUGGESTIONS ({filter === 'All' && !query.trim() ? TOTAL_SUGGESTIONS : visible.length})
-          </EyebrowLabel>
-
-          {visible.length === 0 ? (
-            <EmptyState query={query} />
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {visible.map((s) => (
-                <SuggestionRow
-                  key={s.id}
-                  suggestion={s}
-                  voted={!!votes[s.id]}
-                  onVote={() => toggleVote(s.id)}
-                  onOpen={() => navigate(`/feedback/${s.id}`)}
-                />
-              ))}
-            </div>
-          )}
+          <SuggestionList
+            status={status}
+            sort={sort}
+            q={debouncedQuery}
+            onOpen={(ref) => navigate(`/feedback/${ref}`)}
+          />
         </div>
       </Content>
 
-      <SuggestModal open={suggestOpen} onClose={() => setSuggestOpen(false)} />
+      <SuggestModal
+        open={suggestOpen}
+        onClose={() => setSuggestOpen(false)}
+        initialCategory={suggestCategory}
+      />
       <SortPopover open={sortOpen} onClose={() => setSortOpen(false)} value={sort} onChange={setSort} />
     </>
+  );
+}
+
+/* ── 06b.1 rows — `GET /feedback/posts` ──────────────────────────── */
+function SuggestionList({
+  status,
+  sort,
+  q,
+  onOpen,
+}: {
+  status: string;
+  sort: SortKey;
+  q: string;
+  onOpen: (ref: number) => void;
+}) {
+  const navigate = useNavigate();
+  const posts = useBoardPosts({
+    status: status || undefined,
+    sort,
+    q: q || undefined,
+  });
+  const vote = useToggleBoardVote();
+  const canParticipate = useBoardCanParticipate();
+  const rows = posts.data ?? [];
+
+  return (
+    <>
+      <EyebrowLabel style={{ marginBottom: 10 }}>
+        {posts.data ? `SUGGESTIONS (${rows.length})` : 'SUGGESTIONS'}
+      </EyebrowLabel>
+
+      <AsyncSection
+        query={posts}
+        loadingLabel="Loading suggestions…"
+        empty={{ when: rows.length === 0, node: <EmptyState query={q} /> }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {rows.map((p) => (
+            <SuggestionRow
+              key={p.ref}
+              suggestion={toSuggestion(p)}
+              voteDisabled={vote.isPending}
+              onVote={() =>
+                canParticipate ? vote.mutate({ ref: p.ref, voted: p.you_voted }) : navigate('/signup')
+              }
+              onOpen={() => onOpen(p.ref)}
+            />
+          ))}
+        </div>
+      </AsyncSection>
+
+      {vote.isError && <InlineError message={errorMessage(vote.error)} style={{ textAlign: 'center' }} />}
+    </>
+  );
+}
+
+/* ── 06b.2 lanes ─────────────────────────────────────────────────────
+   `/feedback/roadmap` only groups the on-roadmap statuses (planned, in
+   progress, shipped), so the Open and Declined lanes come from filtered
+   post queries. */
+function BoardLanes({ sort, onOpen }: { sort: SortKey; onOpen: (ref: number) => void }) {
+  const roadmap = useBoardRoadmap();
+  const open = useBoardPosts({ status: 'under_review', sort });
+  const declined = useBoardPosts({ status: 'declined', sort });
+
+  const lanes = useMemo(() => {
+    const middle = (roadmap.data ?? []).map((g) => {
+      const label = STATUS_BY_KEY[g.status.key] ?? g.status.label;
+      return {
+        name: label,
+        status: (STATUS_BY_KEY[g.status.key] ?? 'Planned') as SuggestionStatus | 'Open',
+        dot: STATUS_STYLE[label as SuggestionStatus]?.dot ?? g.status.color,
+        posts: g.posts,
+      };
+    });
+    return [
+      {
+        name: 'Open',
+        status: 'Open' as SuggestionStatus | 'Open',
+        dot: STATUS_STYLE['Under review'].dot,
+        posts: open.data ?? [],
+      },
+      ...middle,
+      {
+        name: 'Declined',
+        status: 'Declined' as SuggestionStatus | 'Open',
+        dot: STATUS_STYLE.Declined.dot,
+        posts: declined.data ?? [],
+      },
+    ];
+  }, [roadmap.data, open.data, declined.data]);
+
+  const combined = {
+    isLoading: roadmap.isLoading || open.isLoading || declined.isLoading,
+    isError: roadmap.isError || open.isError || declined.isError,
+    error: roadmap.error ?? open.error ?? declined.error,
+    refetch: () => {
+      void roadmap.refetch();
+      void open.refetch();
+      void declined.refetch();
+    },
+  };
+
+  const total = lanes.reduce((n, l) => n + l.posts.length, 0);
+
+  return (
+    <AsyncSection
+      query={combined}
+      loadingLabel="Loading the board…"
+      empty={{
+        when: total === 0,
+        node: <EmptyState query="" />,
+      }}
+    >
+      <div className="aq-scroll" style={{ display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto' }}>
+        {lanes.map((lane) => (
+          <div key={lane.name} className="aq-board-lane" style={{ flex: 1 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '9px 13px',
+                background: 'var(--surface-page)',
+                borderRadius: 12,
+                marginBottom: 10,
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: lane.dot }} />
+              <span style={{ flex: 1, font: '800 12px var(--font-sans)' }}>{lane.name}</span>
+              <span style={{ font: '700 11px var(--font-sans)', color: 'var(--text-dim)' }}>
+                {lane.posts.length}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {lane.posts.map((c: BoardPostDto) => {
+                const type = TYPE_BY_KEY[c.category] ?? 'Feature';
+                return (
+                  <Card
+                    key={c.ref}
+                    padding="12px 13px"
+                    hoverable
+                    onClick={() => onOpen(c.ref)}
+                    style={{
+                      cursor: 'pointer',
+                      opacity: lane.status === 'Declined' ? 0.72 : 1,
+                      borderLeft:
+                        lane.status === 'Planned' || lane.status === 'In progress' || lane.status === 'Shipped'
+                          ? `3px solid ${lane.dot}`
+                          : undefined,
+                    }}
+                  >
+                    <div style={{ font: '800 12px/1.3 var(--font-sans)', marginBottom: 7 }}>{c.title}</div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        font: '600 10px var(--font-sans)',
+                        color: 'var(--text-dim)',
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Icon name={TYPE_ICON[type]} size={13} />
+                        {type}
+                      </span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <Icon name={lane.status === 'Shipped' ? 'check' : 'keyboard_arrow_up'} size={14} />
+                        {c.upvotes}
+                      </span>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </AsyncSection>
   );
 }
 
@@ -448,12 +602,12 @@ function SortPopover({
 }: {
   open: boolean;
   onClose: () => void;
-  value: 'voted' | 'newest';
-  onChange: (v: 'voted' | 'newest') => void;
+  value: SortKey;
+  onChange: (v: SortKey) => void;
 }) {
   const OPTIONS = [
-    { id: 'voted' as const, icon: 'trending_up', title: 'Most voted', sub: 'What the community wants most' },
-    { id: 'newest' as const, icon: 'schedule', title: 'Newest', sub: 'Fresh ideas first' },
+    { id: 'top' as const, icon: 'trending_up', title: 'Most voted', sub: 'What the community wants most' },
+    { id: 'new' as const, icon: 'schedule', title: 'Newest', sub: 'Fresh ideas first' },
   ];
 
   return (
@@ -518,5 +672,3 @@ function SortPopover({
     </Popover>
   );
 }
-
-export { StatusChip, VotePill };

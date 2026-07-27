@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { Content } from '../../layouts/AppShell';
@@ -6,36 +6,112 @@ import AdaCube from '../../components/brand/AdaCube';
 import Button from '../../components/core/Button';
 import Icon from '../../components/core/Icon';
 import { EyebrowLabel } from '../../components/core/Misc';
+import { EmptyState, ErrorState, Loading, errorMessage } from '../../components/core/Async';
 import AddSubject from './AddSubject';
 import Semesters from './Semesters';
 import CreateSemester from './CreateSemester';
 import AddFile from './AddFile';
-import { SEMESTERS, SUBJECTS, subjectById, type Subject } from '../../data/subjects';
-import { useAppState } from '../../hooks/useAppState';
+import { toSubject } from '../../lib/mappers';
+import { useDownloadFile, useSemesterCards, useSubject, useSubjectCards } from '../../hooks/data';
+import type { Subject } from '../../data/subjects';
 
 /* ─────────────────────────────────────────────────────────────────────────
    Section 03 — Subjects (frames 03.1–03.5).
 
    Master-detail: a list of subject rows on the left (flex:1) and the tinted
-   detail pane on the right (flex:1.25). Guests see the empty state (00b.2).
+   detail pane on the right (flex:1.25). Rows come from GET /v1/subjects and
+   the pane from GET /v1/subjects/:id; an account with nothing on record —
+   including a fresh guest — gets the 00b.2 empty state.
    ───────────────────────────────────────────────────────────────────────── */
 
 export default function Subjects({ semestersOpen = false }: { semestersOpen?: boolean }) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { guest } = useAppState();
 
-  const [selectedId, setSelectedId] = useState(id ?? SUBJECTS[0].id);
+  const list = useSubjectCards();
+  const semesters = useSemesterCards();
+  const download = useDownloadFile();
+
+  const [picked, setPicked] = useState<string | undefined>(id);
   const [addOpen, setAddOpen] = useState(false);
   const [semOpen, setSemOpen] = useState(semestersOpen);
   const [createSemOpen, setCreateSemOpen] = useState(false);
   const [fileOpen, setFileOpen] = useState(false);
+  const [fileError, setFileError] = useState('');
 
-  const selected = subjectById(selectedId) ?? SUBJECTS[0];
-  const current = SEMESTERS.find((s) => s.current) ?? SEMESTERS[0];
+  // The route is the source of truth whenever it carries an id.
+  useEffect(() => {
+    if (id) setPicked(id);
+  }, [id]);
 
-  /* ── 00b.2 Guest Subjects — empty ───────────────────────────────── */
-  if (guest) {
+  const cards = list.subjects;
+  const selectedId = cards.some((s) => s.id === picked) ? picked : cards[0]?.id;
+  const detail = useSubject(selectedId);
+
+  /* The list rows already carry everything the pane draws, so the detail query
+     only ever upgrades what is on screen — it never blanks it out. */
+  const selected: Subject | undefined = useMemo(() => {
+    if (detail.data && detail.data.id === selectedId) return toSubject(detail.data);
+    return cards.find((s) => s.id === selectedId);
+  }, [detail.data, cards, selectedId]);
+
+  /** A file row opens the short-lived signed URL from GET /v1/files/:id/download. */
+  function openFile(fileId: string | undefined) {
+    if (!fileId || download.isPending) return;
+    setFileError('');
+    download.mutate(fileId, { onError: (e) => setFileError(errorMessage(e)) });
+  }
+
+  const overlays = (
+    <>
+      <AddSubject open={addOpen} onClose={() => setAddOpen(false)} />
+      <Semesters
+        open={semOpen}
+        onClose={() => {
+          setSemOpen(false);
+          if (semestersOpen) navigate('/subjects', { replace: true });
+        }}
+        onCreate={() => {
+          setSemOpen(false);
+          setCreateSemOpen(true);
+        }}
+      />
+      <CreateSemester open={createSemOpen} onClose={() => setCreateSemOpen(false)} />
+      {selected && (
+        <AddFile
+          open={fileOpen}
+          onClose={() => setFileOpen(false)}
+          subjectId={selected.id}
+          subjectCode={selected.code}
+        />
+      )}
+    </>
+  );
+
+  if (list.isLoading) {
+    return (
+      <>
+        <Content padding="24px 26px" center>
+          <Loading label="Loading subjects…" />
+        </Content>
+        {overlays}
+      </>
+    );
+  }
+
+  if (list.isError) {
+    return (
+      <>
+        <Content padding="24px 26px" center>
+          <ErrorState error={list.error} onRetry={() => void list.refetch()} />
+        </Content>
+        {overlays}
+      </>
+    );
+  }
+
+  /* ── 00b.2 Subjects — empty ─────────────────────────────────────── */
+  if (cards.length === 0) {
     return (
       <>
         <Content padding="24px 26px" center>
@@ -70,7 +146,7 @@ export default function Subjects({ semestersOpen = false }: { semestersOpen?: bo
             + Add your first subject
           </Button>
         </Content>
-        <AddSubject open={addOpen} onClose={() => setAddOpen(false)} />
+        {overlays}
       </>
     );
   }
@@ -91,7 +167,7 @@ export default function Subjects({ semestersOpen = false }: { semestersOpen?: bo
             <span className="h-serif" style={{ fontSize: 28 }}>
               Subjects
             </span>
-            <span style={{ font: '700 14px var(--font-sans)', color: 'var(--text-dim)' }}>{SUBJECTS.length}</span>
+            <span style={{ font: '700 14px var(--font-sans)', color: 'var(--text-dim)' }}>{cards.length}</span>
           </div>
           <button
             type="button"
@@ -106,20 +182,21 @@ export default function Subjects({ semestersOpen = false }: { semestersOpen?: bo
               boxShadow: 'var(--shadow-card)',
             }}
           >
-            {current.name}
+            {semesters.active?.name ?? 'Semesters'}
           </button>
         </div>
 
         <div className="aq-subject-cols aq-cols" style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
           {/* Left — subject rows */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
-            {SUBJECTS.map((s) => (
+            {cards.map((s) => (
               <SubjectRow
                 key={s.id}
                 subject={s}
-                selected={s.id === selected.id}
+                selected={s.id === selectedId}
                 onSelect={() => {
-                  setSelectedId(s.id);
+                  setPicked(s.id);
+                  setFileError('');
                   navigate(`/subjects/${s.id}`, { replace: true });
                 }}
               />
@@ -148,131 +225,151 @@ export default function Subjects({ semestersOpen = false }: { semestersOpen?: bo
               minWidth: 0,
             }}
           >
-            <div style={{ padding: '22px 22px 18px', background: `${selected.color}12` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span
-                  style={{
-                    background: `${selected.color}22`,
-                    color: selected.textColor ?? selected.color,
-                    borderRadius: 8,
-                    padding: '4px 10px',
-                    font: '800 12px var(--font-sans)',
-                  }}
-                >
-                  {selected.code}
-                </span>
-                <span style={{ font: '700 11px var(--font-sans)', color: 'var(--text-secondary)' }}>
-                  {selected.credits} credits
-                </span>
-              </div>
-              <div className="h-serif" style={{ fontSize: 26, lineHeight: 1.1, marginBottom: 6 }}>
-                {selected.name}
-              </div>
-              <div style={{ font: '600 12px var(--font-sans)', color: 'var(--text-secondary)' }}>
-                {selected.professor}
-              </div>
-            </div>
+            {selected ? (
+              <>
+                <div style={{ padding: '22px 22px 18px', background: `${selected.color}12` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span
+                      style={{
+                        background: `${selected.color}22`,
+                        color: selected.textColor ?? selected.color,
+                        borderRadius: 8,
+                        padding: '4px 10px',
+                        font: '800 12px var(--font-sans)',
+                      }}
+                    >
+                      {selected.code}
+                    </span>
+                    <span style={{ font: '700 11px var(--font-sans)', color: 'var(--text-secondary)' }}>
+                      {selected.credits} credits
+                    </span>
+                  </div>
+                  <div className="h-serif" style={{ fontSize: 26, lineHeight: 1.1, marginBottom: 6 }}>
+                    {selected.name}
+                  </div>
+                  <div style={{ font: '600 12px var(--font-sans)', color: 'var(--text-secondary)' }}>
+                    {selected.professor}
+                  </div>
+                </div>
 
-            <div style={{ padding: '20px 22px' }}>
-              <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-                <StatTile value={selected.grade} label="CURRENT" color={selected.textColor ?? selected.color} />
-                <StatTile value={selected.target} label="TARGET" />
-                <StatTile value={String(selected.fileCount)} label="FILES" numeral />
-              </div>
+                <div style={{ padding: '20px 22px' }}>
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+                    <StatTile value={selected.grade} label="CURRENT" color={selected.textColor ?? selected.color} />
+                    <StatTile value={selected.target} label="TARGET" />
+                    <StatTile value={String(selected.fileCount)} label="FILES" numeral />
+                  </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: 11,
-                }}
-              >
-                <EyebrowLabel>FILES &amp; MATERIALS</EyebrowLabel>
-                <button
-                  type="button"
-                  onClick={() => setFileOpen(true)}
-                  className="focus-ring"
-                  style={{ font: '800 11px var(--font-sans)', color: 'var(--accent)', borderRadius: 4 }}
-                >
-                  + Add
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
-                {selected.files.map((f) => (
                   <div
-                    key={f.name}
-                    className="aq-press"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 11,
-                      padding: '10px 11px',
-                      background: 'var(--surface-page)',
-                      borderRadius: 12,
-                      cursor: 'pointer',
+                      justifyContent: 'space-between',
+                      marginBottom: 11,
                     }}
                   >
-                    <Icon name={f.icon} size={19} color="var(--accent)" />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ font: '800 12px var(--font-sans)' }}>{f.name}</div>
-                      <div style={{ font: '600 9.5px var(--font-sans)', color: 'var(--text-dim)' }}>{f.meta}</div>
-                    </div>
-                    <span style={{ color: 'var(--text-dim)' }}>›</span>
+                    <EyebrowLabel>FILES &amp; MATERIALS</EyebrowLabel>
+                    <button
+                      type="button"
+                      onClick={() => setFileOpen(true)}
+                      className="focus-ring"
+                      style={{ font: '800 11px var(--font-sans)', color: 'var(--accent)', borderRadius: 4 }}
+                    >
+                      + Add
+                    </button>
                   </div>
-                ))}
-              </div>
 
-              {selected.nudge && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 11,
-                    background: 'var(--accent-soft)',
-                    borderRadius: 14,
-                    padding: '13px 14px',
-                  }}
-                >
-                  <AdaCube size={30} expr="focused" />
-                  <span style={{ flex: 1, font: '600 11px/1.45 var(--font-sans)' }}>{selected.nudge.text}</span>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/ada')}
-                    className="aq-press aq-darken focus-ring"
-                    style={{
-                      font: '800 11px var(--font-sans)',
-                      color: '#fff',
-                      background: 'var(--surface-ink)',
-                      borderRadius: 100,
-                      padding: '7px 13px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {selected.nudge.action}
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+                    {selected.files.length === 0 ? (
+                      <EmptyState
+                        icon="folder_open"
+                        title="No files yet"
+                        caption="Add slides, notes or past papers and Ada can read them."
+                        padding={16}
+                      />
+                    ) : (
+                      selected.files.map((f) => (
+                        <div
+                          key={f.id ?? f.name}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open ${f.name}`}
+                          onClick={() => openFile(f.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              openFile(f.id);
+                            }
+                          }}
+                          className="aq-press"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 11,
+                            padding: '10px 11px',
+                            background: 'var(--surface-page)',
+                            borderRadius: 12,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Icon name={f.icon} size={19} color="var(--accent)" />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ font: '800 12px var(--font-sans)' }}>{f.name}</div>
+                            <div style={{ font: '600 9.5px var(--font-sans)', color: 'var(--text-dim)' }}>{f.meta}</div>
+                          </div>
+                          <span style={{ color: 'var(--text-dim)' }}>›</span>
+                        </div>
+                      ))
+                    )}
+                    {fileError && (
+                      <div
+                        role="alert"
+                        style={{ font: '600 10.5px/1.5 var(--font-sans)', color: 'var(--aq-danger)' }}
+                      >
+                        {fileError}
+                      </div>
+                    )}
+                  </div>
+
+                  {selected.nudge && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 11,
+                        background: 'var(--accent-soft)',
+                        borderRadius: 14,
+                        padding: '13px 14px',
+                      }}
+                    >
+                      <AdaCube size={30} expr="focused" />
+                      <span style={{ flex: 1, font: '600 11px/1.45 var(--font-sans)' }}>{selected.nudge.text}</span>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/ada')}
+                        className="aq-press aq-darken focus-ring"
+                        style={{
+                          font: '800 11px var(--font-sans)',
+                          color: '#fff',
+                          background: 'var(--surface-ink)',
+                          borderRadius: 100,
+                          padding: '7px 13px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {selected.nudge.action}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            ) : (
+              <Loading />
+            )}
           </div>
         </div>
       </Content>
 
-      <AddSubject open={addOpen} onClose={() => setAddOpen(false)} />
-      <Semesters
-        open={semOpen}
-        onClose={() => {
-          setSemOpen(false);
-          if (semestersOpen) navigate('/subjects', { replace: true });
-        }}
-        onCreate={() => {
-          setSemOpen(false);
-          setCreateSemOpen(true);
-        }}
-      />
-      <CreateSemester open={createSemOpen} onClose={() => setCreateSemOpen(false)} />
-      <AddFile open={fileOpen} onClose={() => setFileOpen(false)} subjectCode={selected.code} />
+      {overlays}
     </>
   );
 }

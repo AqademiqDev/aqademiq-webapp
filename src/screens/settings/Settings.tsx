@@ -1,5 +1,7 @@
+import type { CSSProperties } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import Icon from '../../components/core/Icon';
+import { errorMessage } from '../../components/core/Async';
 
 /* ─────────────────────────────────────────────────────────────────────────
    Section 13 — Settings (README §2.15). Two-pane: a 280px rail on the card
@@ -115,18 +117,24 @@ export function Row({
   );
 }
 
-/** A field row that shows a stored value with an inline Edit/Change action. */
+/**
+ * A field row that shows a stored value with an inline Edit/Change action.
+ * `action`/`onAction` are optional — a field the API cannot change yet renders
+ * as the same row without the trailing button.
+ */
 export function ValueRow({
   label,
   value,
   action,
   onAction,
+  disabled = false,
   last = false,
 }: {
   label: string;
   value: string;
-  action: string;
-  onAction: () => void;
+  action?: string;
+  onAction?: () => void;
+  disabled?: boolean;
   last?: boolean;
 }) {
   return (
@@ -144,14 +152,45 @@ export function ValueRow({
         <div style={{ font: '700 10px var(--font-sans)', color: 'var(--text-dim)' }}>{label}</div>
         <div style={{ font: '800 13px var(--font-sans)', marginTop: 2 }}>{value}</div>
       </div>
-      <button
-        type="button"
-        onClick={onAction}
-        className="focus-ring"
-        style={{ font: '800 11px var(--font-sans)', color: 'var(--accent)', borderRadius: 4, flexShrink: 0 }}
-      >
-        {action}
-      </button>
+      {action && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          disabled={disabled}
+          className="focus-ring"
+          style={{
+            font: '800 11px var(--font-sans)',
+            color: 'var(--accent)',
+            borderRadius: 4,
+            flexShrink: 0,
+            opacity: disabled ? 0.45 : undefined,
+          }}
+        >
+          {action}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Inline failure line for a single control — same geometry as the field-level
+ * error under `Input`, so a failed mutation reads next to what caused it
+ * instead of taking over the panel.
+ */
+export function InlineError({ error, style }: { error: unknown; style?: CSSProperties }) {
+  if (!error) return null;
+  return (
+    <div
+      role="alert"
+      style={{
+        font: '600 10.5px var(--font-sans)',
+        color: 'var(--aq-danger)',
+        marginTop: 6,
+        ...style,
+      }}
+    >
+      {errorMessage(error)}
     </div>
   );
 }

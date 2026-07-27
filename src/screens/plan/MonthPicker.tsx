@@ -1,19 +1,97 @@
+import { useEffect, useState } from 'react';
+
 import Button from '../../components/core/Button';
 import Icon from '../../components/core/Icon';
 import Modal from '../../components/overlay/Modal';
-import { MONTH_DAYS, MONTH_LABEL, MONTH_LEGEND, MONTH_WEEKDAYS } from '../../data/tasks';
+import { MONTH_WEEKDAYS } from '../../data/tasks';
+import {
+  addDays,
+  daysInMonth,
+  fromIsoDate,
+  longDateLabel,
+  mondayIndex,
+  monthLabel,
+  monthStart,
+  addMonths,
+  todayIso,
+} from '../../lib/format';
 
-/* Frame 02.4 — Month picker. Modal, max-width 440. */
+/* Frame 02.4 — Month picker. Modal, max-width 440.
 
-export default function MonthPicker({ open, onClose }: { open: boolean; onClose: () => void }) {
+   A real picker: the grid is built from the viewed month, the chevrons move
+   month by month, tapping a day arms it (accent, named in the legend row) and
+   "Jump to date" hands it back to the Plan screen. */
+
+export interface MonthPickerProps {
+  open: boolean;
+  onClose: () => void;
+  /** The day the plan is currently showing. */
+  value: string;
+  onSelect: (iso: string) => void;
+}
+
+interface Cell {
+  iso: string;
+  day: number;
+  muted: boolean;
+}
+
+function buildCells(monthIso: string): Cell[] {
+  const first = monthStart(monthIso);
+  const cells: Cell[] = [];
+  for (let i = mondayIndex(first); i > 0; i--) {
+    const iso = addDays(first, -i);
+    cells.push({ iso, day: fromIsoDate(iso).getDate(), muted: true });
+  }
+  for (let i = 0; i < daysInMonth(first); i++) {
+    cells.push({ iso: addDays(first, i), day: i + 1, muted: false });
+  }
+  while (cells.length % 7 !== 0) {
+    const iso = addDays(cells[cells.length - 1].iso, 1);
+    cells.push({ iso, day: fromIsoDate(iso).getDate(), muted: true });
+  }
+  return cells;
+}
+
+export default function MonthPicker({ open, onClose, value, onSelect }: MonthPickerProps) {
+  const [pending, setPending] = useState(value);
+  const [cursor, setCursor] = useState(() => monthStart(value));
+
+  // Every reopen starts from the day the plan is on.
+  useEffect(() => {
+    if (!open) return;
+    setPending(value);
+    setCursor(monthStart(value));
+  }, [open, value]);
+
+  const today = todayIso();
+  const cells = buildCells(cursor);
+
+  const pick = (iso: string) => {
+    setPending(iso);
+    setCursor(monthStart(iso));
+  };
+
   return (
     <Modal open={open} onClose={onClose} hideClose maxWidth={440} padding={24} aria-label="Jump to date">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <button type="button" aria-label="Previous month" className="aq-press focus-ring" style={{ display: 'flex', borderRadius: '50%' }}>
+        <button
+          type="button"
+          aria-label="Previous month"
+          onClick={() => setCursor((c) => addMonths(c, -1))}
+          className="aq-press focus-ring"
+          style={{ display: 'flex', borderRadius: '50%' }}
+        >
           <Icon name="chevron_left" size={22} color="var(--text-secondary)" />
         </button>
-        <span style={{ font: '800 17px var(--font-sans)' }}>{MONTH_LABEL}</span>
-        <button type="button" aria-label="Next month" className="aq-press focus-ring" style={{ display: 'flex', borderRadius: '50%' }}>
+        <span style={{ font: '800 17px var(--font-sans)' }}>{monthLabel(cursor)}</span>
+        <button
+          type="button"
+          aria-label="Next month"
+          onClick={() => setCursor((c) => addMonths(c, 1))}
+          className="aq-press focus-ring"
+          style={{ display: 'flex', borderRadius: '50%' }}
+        >
           <Icon name="chevron_right" size={22} color="var(--text-secondary)" />
         </button>
       </div>
@@ -34,9 +112,17 @@ export default function MonthPicker({ open, onClose }: { open: boolean; onClose:
             {w}
           </div>
         ))}
-        {MONTH_DAYS.map((d) => (
-          <div key={d.date} style={{ textAlign: 'center', padding: '9px 0', position: 'relative' }}>
-            {d.today ? (
+        {cells.map((d) => (
+          <button
+            key={d.iso}
+            type="button"
+            onClick={() => pick(d.iso)}
+            aria-label={longDateLabel(d.iso)}
+            aria-pressed={d.iso === pending}
+            className="aq-press focus-ring"
+            style={{ textAlign: 'center', padding: '9px 0', position: 'relative', borderRadius: 10 }}
+          >
+            {d.iso === today ? (
               <span
                 style={{
                   display: 'inline-flex',
@@ -50,28 +136,36 @@ export default function MonthPicker({ open, onClose }: { open: boolean; onClose:
                   font: '800 12px var(--font-sans)',
                 }}
               >
-                {d.date}
+                {d.day}
               </span>
             ) : (
               <span
                 style={{
                   font: '700 12px var(--font-sans)',
-                  color: d.date === MONTH_LEGEND.date ? 'var(--accent)' : d.muted ? 'var(--text-dim)' : undefined,
+                  color: d.iso === pending ? 'var(--accent)' : d.muted ? 'var(--text-dim)' : undefined,
                 }}
               >
-                {d.date}
+                {d.day}
               </span>
             )}
-          </div>
+          </button>
         ))}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 20px' }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
-        <span style={{ font: '600 11px var(--font-sans)', color: 'var(--text-secondary)' }}>{MONTH_LEGEND.text}</span>
+        <span style={{ font: '600 11px var(--font-sans)', color: 'var(--text-secondary)' }}>
+          {longDateLabel(pending)}
+        </span>
       </div>
 
-      <Button full onClick={onClose}>
+      <Button
+        full
+        onClick={() => {
+          onSelect(pending);
+          onClose();
+        }}
+      >
         Jump to date
       </Button>
     </Modal>

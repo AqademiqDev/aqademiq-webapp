@@ -2,6 +2,7 @@ import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../core/Icon';
 import { useAppState } from '../../hooks/useAppState';
+import { useProfile } from '../../hooks/data';
 
 /* ─────────────────────────────────────────────────────────────────────────
    TopNav (README §2.1) — 58px, card ground, hairline bottom rule.
@@ -160,14 +161,18 @@ export function Avatar({
 }
 
 export default function TopNav() {
-  const { guest, theme, toggleTheme, name } = useAppState();
+  const { guest, theme, toggleTheme } = useAppState();
+  const profile = useProfile();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const onSettings = location.pathname.startsWith('/settings');
-  const initial = (name.trim()[0] || 'R').toUpperCase();
+  // The avatar letter comes from the server profile; the email is the fallback
+  // for an account that has not filled a name in yet.
+  const who = profile.data?.name?.trim() || profile.data?.email?.trim() || '';
+  const initial = (who[0] || 'A').toUpperCase();
 
   return (
     <header
@@ -208,6 +213,8 @@ export default function TopNav() {
       </nav>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+        {/* no endpoint: there is no cross-app search route — the field stays a
+            local affordance until one exists. */}
         {searchOpen && (
           <input
             ref={searchRef}

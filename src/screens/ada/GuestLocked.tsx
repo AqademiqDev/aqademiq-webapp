@@ -4,7 +4,11 @@ import LockBadge from '../../components/brand/LockBadge';
 import Button from '../../components/core/Button';
 import Icon from '../../components/core/Icon';
 
-/* Frame 00b.3 — Locked feature → set up Ada. Centred, max-width 440. */
+/* Frame 00b.3 — Locked feature → set up Ada. Centred, max-width 440.
+
+   Ada is the one account-only surface: `/v1/ada/*` is not reachable on an
+   anonymous session, so the guest gate in `Ada.tsx` (`useAuth().isGuest`)
+   swaps the chat for this screen and the CTA sends them to sign-up. */
 
 const POINTS = ['What & where you study', 'Your deadlines & syllabus', 'When you focus best'];
 
@@ -72,7 +76,7 @@ export default function GuestLocked() {
         </div>
 
         <Button
-          onClick={() => navigate('/setup')}
+          onClick={() => navigate('/signup')}
           style={{ maxWidth: 300, width: '100%', margin: '0 auto 10px' }}
         >
           Set up Ada · 2 min →

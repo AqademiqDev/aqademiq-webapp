@@ -11,9 +11,11 @@ import { GuestBlurPane } from '../../components/content/GuestNudge';
 /* Frame 00b.4 — Locked stats → set up. The Profile stats sit blurred behind a
    bottom-anchored card (max-width 560), with — placeholders in the tiles. */
 
+/* Placeholders only — a guest's real numbers stay behind the blur until they
+   have an account. Labels mirror the tiles Profile draws when unlocked. */
 const PLACEHOLDER_STATS = [
   { label: 'DAY STREAK' },
-  { label: 'FOCUS THIS WK' },
+  { label: 'FOCUS TIME' },
   { label: 'TASKS DONE' },
 ];
 
@@ -90,7 +92,9 @@ export default function GuestStatsLocked() {
           match.
         </div>
 
-        <Button onClick={() => navigate('/setup')} style={{ maxWidth: 320, width: '100%', margin: '0 auto 10px' }}>
+        {/* Guests already own a real (anonymous) session, so the upgrade path is
+            sign-up — `linkGuestAccount` keeps every task, streak and subject. */}
+        <Button onClick={() => navigate('/signup')} style={{ maxWidth: 320, width: '100%', margin: '0 auto 10px' }}>
           Set up now · 2 min →
         </Button>
         <button

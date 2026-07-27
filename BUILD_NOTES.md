@@ -142,6 +142,12 @@ screens with dark tokens rather than a separate evening layout.
 
 ## 6. What is deliberately not built
 
+> **Superseded.** This section described the original front-end-only build. The
+> app has since been wired to the live backend — real auth (Supabase, including
+> anonymous guest sessions), real persistence, and real file upload. See
+> [`INTEGRATION.md`](INTEGRATION.md) for what the backend does and does not
+> provide today.
+
 Front-end only, per the brief: no backend, no persistence beyond `localStorage`,
 no real auth, no file upload (dropzones are visual), no audio for Prism, and
 search returns no results screen.

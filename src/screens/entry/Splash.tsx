@@ -1,15 +1,29 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-/* Frame 00.1 — Splash. No nav. Auto-advances to Welcome (README §4.3). */
+import { useAuth } from '../../hooks/useAuth';
+
+/* Frame 00.1 — Splash. No nav. Holds the frame's beat, then routes on whatever
+   the session turned out to be (README §4.3): signed-out lands on Welcome,
+   everyone else lands on the plan. Onboarding is App.tsx's gate, not ours. */
 
 export default function Splash() {
   const navigate = useNavigate();
+  const { status } = useAuth();
+
+  /* The animation beat and the session check run in parallel — whichever
+     finishes last decides when we leave. */
+  const [beatDone, setBeatDone] = useState(false);
 
   useEffect(() => {
-    const t = window.setTimeout(() => navigate('/welcome', { replace: true }), 1600);
+    const t = window.setTimeout(() => setBeatDone(true), 1600);
     return () => window.clearTimeout(t);
-  }, [navigate]);
+  }, []);
+
+  useEffect(() => {
+    if (!beatDone || status === 'loading') return;
+    navigate(status === 'signed-out' ? '/welcome' : '/plan', { replace: true });
+  }, [beatDone, status, navigate]);
 
   return (
     <div

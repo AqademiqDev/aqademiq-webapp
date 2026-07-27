@@ -1,10 +1,19 @@
 import Icon from '../core/Icon';
+import { useReferralBalance } from '../../hooks/data';
 
-/* Invite hero (README §2.18) — the only gradient in the product, frame 06.1. */
+/* Invite hero (README §2.18) — the only gradient in the product, frame 06.1.
 
-export const REFERRAL_CODE = ['A', 'D', 'A', '4', '2'];
+   The code comes from `/referrals/rewards/balance`, which mints one on first
+   read. Real codes are 8 hex characters where the frame drew 5, so the tiles
+   shrink past 6 characters to keep the row on one line. */
 
 export default function InviteHero({ onShare }: { onShare: () => void }) {
+  const balance = useReferralBalance();
+  const code = balance.data?.code ?? '';
+  const chars = code ? [...code] : ['', '', '', '', ''];
+  const tileWidth = chars.length > 6 ? 30 : 38;
+  const tileFont = chars.length > 6 ? 16 : 20;
+
   return (
     <div
       style={{
@@ -40,11 +49,11 @@ export default function InviteHero({ onShare }: { onShare: () => void }) {
       </div>
 
       <div style={{ display: 'flex', gap: 7, justifyContent: 'center', marginBottom: 16 }}>
-        {REFERRAL_CODE.map((ch, i) => (
+        {chars.map((ch, i) => (
           <div
             key={i}
             style={{
-              width: 38,
+              width: tileWidth,
               height: 44,
               borderRadius: 11,
               background: 'rgba(255,255,255,.9)',
@@ -53,8 +62,11 @@ export default function InviteHero({ onShare }: { onShare: () => void }) {
               justifyContent: 'center',
               fontFamily: 'var(--font-mono)',
               fontWeight: 800,
-              fontSize: 20,
+              fontSize: tileFont,
               color: '#3a2c66',
+              // Empty tiles while the code loads — the row keeps its geometry
+              // rather than collapsing and popping back.
+              opacity: ch ? 1 : 0.55,
             }}
           >
             {ch}
@@ -65,6 +77,7 @@ export default function InviteHero({ onShare }: { onShare: () => void }) {
       <button
         type="button"
         onClick={onShare}
+        disabled={!code}
         className="aq-press focus-ring"
         style={{
           width: '100%',

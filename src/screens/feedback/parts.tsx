@@ -1,14 +1,48 @@
 import type { CSSProperties } from 'react';
 import Card from '../../components/core/Card';
 import Icon from '../../components/core/Icon';
-import { STATUS_STYLE, TYPE_ICON, type Suggestion, type SuggestionStatus } from '../../data/suggestions';
+import type { BoardPostDto } from '../../lib/api';
+import { relativeLabel } from '../../lib/format';
+import {
+  STATUS_BY_KEY,
+  STATUS_STYLE,
+  TYPE_BY_KEY,
+  TYPE_ICON,
+  type Suggestion,
+  type SuggestionStatus,
+} from '../../data/suggestions';
 
 /* Feedback row pieces (README §2.14) — frames 06b.1 and 06b.4. */
+
+/** First letter of a board author's display name, for the avatar circles. */
+export function initialOf(name: string | null | undefined): string {
+  const c = (name ?? '').trim()[0];
+  return c ? c.toUpperCase() : '?';
+}
+
+/** `BoardPostDto` → the view-model the frames draw. */
+export function toSuggestion(post: BoardPostDto): Suggestion {
+  return {
+    id: String(post.ref),
+    number: post.ref,
+    title: post.title,
+    body: post.body,
+    votes: post.upvotes,
+    voted: post.you_voted,
+    comments: post.comment_count,
+    type: TYPE_BY_KEY[post.category] ?? 'Feature',
+    status: STATUS_BY_KEY[post.status] ?? 'Under review',
+    author: post.author?.name ?? undefined,
+    authorInitial: initialOf(post.author?.name),
+    age: relativeLabel(post.created_at),
+  };
+}
 
 export function VotePill({
   votes,
   voted,
   onVote,
+  disabled = false,
   minWidth = 48,
   padding = '6px 0',
   radius = 11,
@@ -17,6 +51,7 @@ export function VotePill({
   votes: number;
   voted: boolean;
   onVote: () => void;
+  disabled?: boolean;
   minWidth?: number;
   padding?: string;
   radius?: number;
@@ -25,6 +60,7 @@ export function VotePill({
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={(e) => {
         e.stopPropagation();
         onVote();
@@ -88,17 +124,16 @@ export function StatusChip({
 
 export function SuggestionRow({
   suggestion,
-  voted,
   onVote,
   onOpen,
+  voteDisabled = false,
 }: {
   suggestion: Suggestion;
-  voted: boolean;
   onVote: () => void;
   onOpen: () => void;
+  /** Vote toggles are optimistic; the pill only locks while a call is in flight. */
+  voteDisabled?: boolean;
 }) {
-  const votes = suggestion.votes + (voted && !suggestion.voted ? 1 : !voted && suggestion.voted ? -1 : 0);
-
   return (
     <Card
       padding="11px 15px"
@@ -106,7 +141,12 @@ export function SuggestionRow({
       onClick={onOpen}
       style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}
     >
-      <VotePill votes={votes} voted={voted} onVote={onVote} />
+      <VotePill
+        votes={suggestion.votes}
+        voted={!!suggestion.voted}
+        onVote={onVote}
+        disabled={voteDisabled}
+      />
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ font: '800 13.5px var(--font-sans)', marginBottom: 3 }}>{suggestion.title}</div>
@@ -124,11 +164,30 @@ export function SuggestionRow({
             {suggestion.type}
           </span>
           <span>·</span>
-          <span>{suggestion.comments} comments</span>
+          <span>
+            {suggestion.comments} {suggestion.comments === 1 ? 'comment' : 'comments'}
+          </span>
         </div>
       </div>
 
       <StatusChip status={suggestion.status} />
     </Card>
+  );
+}
+
+/** Inline failure line for a mutation next to the control that triggered it. */
+export function InlineError({ message, style }: { message: string; style?: CSSProperties }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        font: '700 11px/1.5 var(--font-sans)',
+        color: 'var(--aq-danger)',
+        marginTop: 8,
+        ...style,
+      }}
+    >
+      {message}
+    </div>
   );
 }

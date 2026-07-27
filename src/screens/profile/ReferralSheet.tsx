@@ -1,14 +1,21 @@
+import { useState } from 'react';
+
 import Icon from '../../components/core/Icon';
 import Modal from '../../components/overlay/Modal';
 import { EyebrowLabel } from '../../components/core/Misc';
-import { REFERRAL_CODE } from '../../components/content/InviteHero';
-import { useAppState } from '../../hooks/useAppState';
+import { ErrorState, Loading } from '../../components/core/Async';
+import { useProfile, useReferralBalance } from '../../hooks/data';
 
-/* Frame 06.2 — Referral sheet. Modal, max-width 420, padding 26, centred. */
+/* Frame 06.2 — Referral sheet. Modal, max-width 420, padding 26, centred.
+
+   The code comes from GET /referrals/rewards/balance, which mints one on first
+   read. Redeeming somebody else's code is not offered here — that belongs to
+   the onboarding referral step (POST /referrals/validate + /referrals/redeem). */
+
+/** Server codes are 8 hex characters; the tiles shrink so the row still fits. */
+const boxWidthFor = (len: number) => (len > 6 ? 36 : 40);
 
 export default function ReferralSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { name } = useAppState();
-
   return (
     <Modal
       open={open}
@@ -19,6 +26,59 @@ export default function ReferralSheet({ open, onClose }: { open: boolean; onClos
       panelStyle={{ textAlign: 'center' }}
       aria-label="Share your invite"
     >
+      {/* Body lives in its own component so the balance query — which mints the
+          code on first read — only fires once the sheet is actually opened. */}
+      <SheetBody onClose={onClose} />
+    </Modal>
+  );
+}
+
+function SheetBody({ onClose }: { onClose: () => void }) {
+  const profile = useProfile();
+  const balance = useReferralBalance();
+
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+
+  const name = profile.data?.name?.trim() || 'a friend';
+  const code = balance.data?.code ?? '';
+  const redemptions = balance.data?.redemptions ?? 0;
+  const points = balance.data?.balance ?? 0;
+  const boxWidth = boxWidthFor(code.length);
+
+  const share = async () => {
+    if (!code) return;
+    setCopyError(null);
+
+    const text = `Join me on Aqademiq — my invite code is ${code}`;
+    const nav = navigator as Navigator & {
+      share?: (data: { title?: string; text?: string }) => Promise<void>;
+    };
+
+    if (typeof nav.share === 'function') {
+      try {
+        await nav.share({ title: 'Aqademiq', text });
+        onClose();
+        return;
+      } catch {
+        /* sheet dismissed or unavailable — fall through to the clipboard */
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => {
+        setCopied(false);
+        onClose();
+      }, 1000);
+    } catch {
+      setCopyError('Copying is blocked here — the code above can be typed in by hand.');
+    }
+  };
+
+  return (
+    <>
       <div
         style={{
           position: 'relative',
@@ -55,32 +115,68 @@ export default function ReferralSheet({ open, onClose }: { open: boolean; onClos
       </div>
 
       <EyebrowLabel style={{ marginBottom: 9 }}>YOUR REFERRAL CODE</EyebrowLabel>
-      <div style={{ display: 'flex', gap: 7, justifyContent: 'center', marginBottom: 18 }}>
-        {REFERRAL_CODE.map((ch, i) => (
+
+      {balance.isLoading ? (
+        <Loading padding={14} label="Getting your code…" />
+      ) : balance.isError ? (
+        <ErrorState error={balance.error} onRetry={balance.refetch} padding={14} />
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 7, justifyContent: 'center', marginBottom: 10 }}>
+            {code.split('').map((ch, i) => (
+              <div
+                key={i}
+                style={{
+                  width: boxWidth,
+                  height: 46,
+                  borderRadius: 11,
+                  background: 'var(--surface-page)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 800,
+                  fontSize: 20,
+                  boxShadow: 'inset 0 0 0 1px var(--border-hairline)',
+                }}
+              >
+                {ch}
+              </div>
+            ))}
+          </div>
+          {/* Both numbers are real; they stay at 0 for everyone until the reward
+              ledger ships, so nothing here is invented. */}
           <div
-            key={i}
             style={{
-              width: 40,
-              height: 46,
-              borderRadius: 11,
-              background: 'var(--surface-page)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontFamily: 'var(--font-mono)',
-              fontWeight: 800,
-              fontSize: 20,
-              boxShadow: 'inset 0 0 0 1px var(--border-hairline)',
+              font: '600 11px var(--font-sans)',
+              color: 'var(--text-dim)',
+              marginBottom: 18,
             }}
           >
-            {ch}
+            {redemptions === 0
+              ? 'No one has used your code yet.'
+              : `${redemptions} ${redemptions === 1 ? 'friend has' : 'friends have'} used your code` +
+                (points > 0 ? ` · ${points} points` : '')}
           </div>
-        ))}
-      </div>
+        </>
+      )}
+
+      {copyError && (
+        <div
+          style={{
+            font: '700 11.5px/1.5 var(--font-sans)',
+            color: 'var(--aq-danger)',
+            marginBottom: 12,
+          }}
+        >
+          {copyError}
+        </div>
+      )}
 
       <button
         type="button"
-        onClick={onClose}
+        onClick={share}
+        disabled={!code}
         className="aq-press focus-ring"
         style={{
           width: '100%',
@@ -94,11 +190,12 @@ export default function ReferralSheet({ open, onClose }: { open: boolean; onClos
           justifyContent: 'center',
           gap: 9,
           font: '800 13px var(--font-sans)',
+          opacity: code ? 1 : 0.45,
         }}
       >
-        <Icon name="ios_share" size={18} />
-        Share invite
+        <Icon name={copied ? 'check' : 'ios_share'} size={18} />
+        {copied ? 'Code copied' : 'Share invite'}
       </button>
-    </Modal>
+    </>
   );
 }

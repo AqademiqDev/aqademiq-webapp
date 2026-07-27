@@ -1,14 +1,20 @@
 # Aqademiq Web
 
-Front-end build of the Aqademiq study-planner web app, reproduced from a design
-handoff package of 65 frames.
+The Aqademiq study-planner web app, built from a design handoff package of 65
+frames and wired to the live backend.
 
-**React 18 · Vite · TypeScript · Tailwind CSS · React Router v6**
-Front-end only — all content is static mock data in `src/data/`.
+**React 18 · Vite · TypeScript · Tailwind CSS · React Router v6 · TanStack Query
+· Supabase Auth**
+
+Every screen reads and writes the live API — Supabase Auth for identity (with
+anonymous sign-in for guest mode) and the Supabase Edge Function `api` for data.
+See [`INTEGRATION.md`](INTEGRATION.md) for the wire contract, the layer map and
+what the backend does not yet provide.
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
+cp .env.example .env.local   # fill in VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
+npm run dev                  # http://localhost:5173
 npm run build
 npm run preview
 ```
@@ -75,8 +81,10 @@ src/
 ├─ screens/      entry · onboarding · plan · subjects · focus
 │                ada · profile · feedback · mood · settings
 ├─ layouts/      AppShell (TopNav + outlet) · AuthShell
-├─ hooks/        useAppState · useFocusTimer
-├─ data/         static mock data
+├─ hooks/        useAuth · useAppState · useFocusTimer
+│   └─ data/     one TanStack Query module per domain — what screens import
+├─ lib/          env · supabase · api/ · format · mappers · queryClient
+├─ data/         view-model types + styling tables (the mock rows are gone)
 └─ styles/       tokens.css · index.css
 ```
 
@@ -97,3 +105,5 @@ svg { flex-shrink: 0; vertical-align: middle; }
   collapses transitions.
 - The "Continue with Google" button still carries the handoff's placeholder
   mark — Google's official asset was never supplied. See `BUILD_NOTES.md`.
+- `BUILD_NOTES.md` describes the original front-end-only build; its §6 ("what is
+  deliberately not built") is superseded by `INTEGRATION.md`.
