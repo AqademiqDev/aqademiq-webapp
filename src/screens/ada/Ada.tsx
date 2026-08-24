@@ -20,6 +20,7 @@ import {
   useSubjects,
   useDecideAdaAction,
   useDecideAllAdaActions,
+  useUploadAdaAttachment,
 } from '../../hooks/data';
 import { useAuth } from '../../hooks/useAuth';
 import { ApiError } from '../../lib/api';
@@ -53,6 +54,16 @@ interface PlanDay {
 
 /** A rendered turn — the drawn `ChatMessage` plus the plan grouped by day. */
 type AdaTurn = ChatMessage & { planDays?: PlanDay[]; actions?: AdaActionDto[] };
+
+/** What `uploadAdaAttachment` hands back — exactly what Send needs to post. */
+type AdaAttachmentRef = { key: string; name: string; mime_type?: string };
+
+/** Matches the subject-file limit; the presign rejects anything larger. */
+const ADA_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+/* The picker used to offer every file on disk while attachments were not even
+   implemented. These are the types mobile accepts. */
+const ADA_ACCEPT = '.pdf,.doc,.docx,.ppt,.pptx,.txt,.md,application/pdf,text/plain,image/*';
 
 interface ApplyFailure {
   id: string;
@@ -124,7 +135,13 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
   const [confirmClear, setConfirmClear] = useState(false);
   const [applied, setApplied] = useState<Record<string, number>>({});
   const [applyError, setApplyError] = useState<ApplyFailure | null>(null);
+  /* Attachments are *staged*: each pick uploads to storage immediately so the
+     bytes are already there when Send is pressed, but nothing reaches the
+     conversation until the user sends explicitly — same contract as mobile. */
+  const [staged, setStaged] = useState<AdaAttachmentRef[]>([]);
+  const [uploading, setUploading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const conversations = useConversations();
   const messagesQuery = useMessages(activeId);
@@ -133,6 +150,7 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
   const createConversation = useCreateConversation();
   const sendMessage = useSendMessage();
   const applyPlan = useApplyPlan();
+  const uploadAttachment = useUploadAdaAttachment();
   /* Ada's proposals. `decide` carries the conversation so a decision can patch
      the cached thread — and drop in any follow-up message the server returns —
      without refetching the whole chat. */
@@ -177,17 +195,24 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
   /** Creates the conversation on the first turn, then posts. */
   async function send(text: string) {
     const body = text.trim();
-    if (!body || sending) return;
+    // A turn carrying only files is legitimate — "here's my syllabus".
+    if ((!body && staged.length === 0) || sending || uploading) return;
     setComposerNote(null);
     setDraft('');
-    setPendingText(body);
+    setPendingText(body || `Sent ${staged.length} file${staged.length === 1 ? '' : 's'}`);
+    const sending_ = staged;
+    setStaged([]);
     try {
       let id = activeId;
-      if (!id) id = (await createConversation.mutateAsync(body.slice(0, 60))).id;
+      if (!id) id = (await createConversation.mutateAsync((body || 'Files').slice(0, 60))).id;
       // The POST writes both turns into the message cache on success, so the
       // id is only adopted afterwards — the thread is populated the moment it
       // becomes the active conversation.
-      await sendMessage.mutateAsync({ conversationId: id, text: body });
+      await sendMessage.mutateAsync({
+        conversationId: id,
+        text: body,
+        attachments: sending_.length ? sending_ : undefined,
+      });
       if (id !== activeId) {
         setActiveId(id);
         if (showHistory) navigate(`/ada/${id}`, { replace: true });
@@ -195,10 +220,118 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
     } catch (err) {
       setComposerNote({ text: errorMessage(err), tone: 'error' });
       setDraft(body);
+      // Put the files back so the turn can be retried without re-picking.
+      setStaged(sending_);
     } finally {
       setPendingText(null);
     }
   }
+
+  /* Upload each pick straight away and hold the refs. The conversation has to
+     exist first — the presign is scoped to it — which mirrors mobile's
+     `_ensureConversation()`. */
+  async function stageFiles(files: FileList | null) {
+    const picked = Array.from(files ?? []);
+    if (!picked.length || uploading) return;
+    setComposerNote(null);
+    setUploading(true);
+    try {
+      let id = activeId;
+      if (!id) {
+        id = (await createConversation.mutateAsync('Files')).id;
+        setActiveId(id);
+      }
+      for (const file of picked) {
+        if (file.size > ADA_MAX_ATTACHMENT_BYTES) {
+          setComposerNote({ text: `${file.name} is over the 20 MB limit.`, tone: 'error' });
+          continue;
+        }
+        try {
+          const ref = await uploadAttachment.mutateAsync({ conversationId: id, file });
+          setStaged((prev) => [...prev, ref]);
+        } catch (err) {
+          // One bad file must not discard the ones that worked.
+          setComposerNote({ text: `Couldn't upload ${file.name} — ${errorMessage(err)}`, tone: 'error' });
+        }
+      }
+    } catch (err) {
+      setComposerNote({ text: errorMessage(err), tone: 'error' });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const removeStaged = (key: string) => setStaged((prev) => prev.filter((a) => a.key !== key));
+
+  /* One hidden picker shared by every composer on the screen, plus the strip
+     of what is staged. Mobile shows the same row above its input. */
+  const attachmentBar = (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept={ADA_ACCEPT}
+        aria-label="Attach files"
+        onChange={(e) => {
+          void stageFiles(e.target.files);
+          e.target.value = '';
+        }}
+        style={{ display: 'none' }}
+      />
+      {(staged.length > 0 || uploading) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {staged.map((a) => (
+            <span
+              key={a.key}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'var(--surface-card)',
+                border: '1.5px solid var(--border-hairline)',
+                borderRadius: 100,
+                padding: '5px 6px 5px 11px',
+                font: '700 11px var(--font-sans)',
+                maxWidth: 220,
+              }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {a.name}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeStaged(a.key)}
+                aria-label={`Remove ${a.name}`}
+                className="aq-press focus-ring"
+                style={{ display: 'flex', borderRadius: '50%' }}
+              >
+                <Icon name="close" size={14} color="var(--text-dim)" />
+              </button>
+            </span>
+          ))}
+          {uploading && (
+            <span
+              role="status"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                background: 'var(--surface-page)',
+                border: '1.5px solid var(--border-hairline)',
+                borderRadius: 100,
+                padding: '6px 12px',
+                font: '600 11px var(--font-sans)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Uploading…
+            </span>
+          )}
+        </div>
+      )}
+    </>
+  );
 
   function openChat(id: string) {
     setActiveId(id);
@@ -574,15 +707,16 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
           >
             {threadView}
           </div>
+          {attachmentBar}
           <Composer
             value={draft}
             onChange={setDraft}
             onSend={() => void send(draft)}
-            onAttach={() => setComposerNote(ATTACH_NOTE)}
+            onAttach={() => fileRef.current?.click()}
             placeholder="Reply…"
             sunken
             sendSize={38}
-            disabled={sending}
+            disabled={sending || uploading}
             note={composerNote}
           />
         </main>
@@ -684,7 +818,7 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
                   key={p}
                   type="button"
                   onClick={() => void send(p)}
-                  disabled={sending}
+                  disabled={sending || uploading}
                   className="aq-press focus-ring"
                   style={{
                     padding: '9px 16px',
@@ -700,13 +834,14 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
               ))}
             </div>
 
+            {attachmentBar}
             <Composer
               value={draft}
               onChange={setDraft}
               onSend={() => void send(draft)}
-              onAttach={() => setComposerNote(ATTACH_NOTE)}
+              onAttach={() => fileRef.current?.click()}
               placeholder="What's on your mind?"
-              disabled={sending}
+              disabled={sending || uploading}
               note={composerNote}
               style={{ maxWidth: 560 }}
             />
@@ -719,13 +854,14 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
             >
               {threadView}
             </div>
+            {attachmentBar}
             <Composer
               value={draft}
               onChange={setDraft}
               onSend={() => void send(draft)}
-              onAttach={() => setComposerNote(ATTACH_NOTE)}
+              onAttach={() => fileRef.current?.click()}
               placeholder="Ask Ada to plan, break down, or reschedule…"
-              disabled={sending}
+              disabled={sending || uploading}
               note={composerNote}
               style={{ marginTop: 14 }}
             />
@@ -739,11 +875,6 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
 /* no endpoint: `/ada/uploads` presigns attachment keys but src/lib/api exposes
    no client for it, so the paperclip cannot produce the `key` sendMessage
    needs. It answers inline rather than silently doing nothing. */
-const ATTACH_NOTE: ComposerNote = {
-  text: 'Attachments are not available yet — paste the details into your message for now.',
-  tone: 'info',
-};
-
 function Bubble({
   message,
   onApply,
