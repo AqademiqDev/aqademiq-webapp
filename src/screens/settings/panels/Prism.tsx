@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Icon from '../../../components/core/Icon';
 import Toggle from '../../../components/core/Toggle';
 import PrismRow from '../../../components/content/PrismRow';
@@ -8,12 +8,23 @@ import { EyebrowLabel, Slider } from '../../../components/core/Misc';
 import { InlineError, PanelHead, Row } from '../Settings';
 import { usePrismModes, usePrismPreferences, useUpdatePrismPreferences } from '../../../hooks/data';
 import type { PrismModeDto } from '../../../lib/api';
+import { prismEngine } from '../../../audio/engine';
+import { resolveMode } from '../../../audio/modes';
 
 /* Frame 13.5 — Prism.
 
    The catalogue is the server's (`/prism-modes`), so the labels are its own —
    the drawn PRISM_MODES table now only supplies the glyph skin: the silent mode
-   keeps the muted slash, the rest cycle the drawn hues in catalogue order. */
+   keeps the muted slash, the rest cycle the drawn hues in catalogue order.
+
+   Picking a default used to be blind — the frames draw no preview control
+   because the catalogue was meant to carry streams, and none of them ever did.
+   The soundscape is generated locally now, so a mode can simply be played:
+   choosing one auditions it for a few seconds. That is also why the preview
+   button is the only place audio starts here — browsers only allow an
+   AudioContext to open inside a real click. */
+
+const PREVIEW_SECONDS = 12;
 
 const SILENT = PRISM_MODES[PRISM_MODES.length - 1];
 const HUES = PRISM_MODES.filter((m) => m.id !== 'none');
@@ -32,6 +43,36 @@ export default function Prism() {
      drag or key repeat ends rather than on every tick. */
   const [drag, setDrag] = useState<number | null>(null);
   const volume = drag ?? prefs.data?.volume_level ?? 50;
+
+  const [previewing, setPreviewing] = useState<string | null>(null);
+  const previewTimer = useRef<number | null>(null);
+
+  const endPreview = () => {
+    if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+    previewTimer.current = null;
+    prismEngine().stop();
+    setPreviewing(null);
+  };
+
+  /** Audition a mode. Silence has nothing to play, so it just stops. */
+  const preview = (m: PrismModeDto) => {
+    if (previewing === m.key) {
+      endPreview();
+      return;
+    }
+    endPreview();
+    const { mode, params, silent } = resolveMode(m.key);
+    if (silent) return;
+    setPreviewing(m.key);
+    void prismEngine()
+      .start(mode)
+      .then(() => prismEngine().updateParams({ ...params, masterGain: volume / 100 }))
+      .catch(() => setPreviewing(null));
+    previewTimer.current = window.setTimeout(endPreview, PREVIEW_SECONDS * 1000);
+  };
+
+  // Never leave a preview playing behind a closed panel.
+  useEffect(() => endPreview, []);
 
   const list = modes.data ?? [];
   let hue = -1;
@@ -78,13 +119,13 @@ export default function Prism() {
         >
           {list.map((m) => {
             if (m.key !== 'none') hue += 1;
-            // A mode with a null `url` is still selectable — it just has no
-            // stream to preview, and 13.5 draws no preview control anyway.
             return (
               <PrismRow
                 key={m.key}
                 mode={skin(m, hue)}
                 selected={prefs.data?.default_mode === m.key}
+                previewing={previewing === m.key}
+                onPreview={m.key === 'none' ? undefined : () => preview(m)}
                 onSelect={() =>
                   update.mutate({ default_mode: m.key, default_preset_id: m.preset_id ?? null })
                 }

@@ -5,6 +5,7 @@ import AdaCube from '../../components/brand/AdaCube';
 import Button from '../../components/core/Button';
 import Icon from '../../components/core/Icon';
 import TaskCard from '../../components/content/TaskCard';
+import Markdown from '../../components/content/Markdown';
 import type { TaskCardProps } from '../../components/content/TaskCard';
 import { AsyncSection, EmptyState, errorMessage } from '../../components/core/Async';
 import GuestLocked from './GuestLocked';
@@ -920,7 +921,9 @@ function Bubble({
       >
         {hasText && (
           <div style={{ font: '600 13px/1.5 var(--font-sans)', marginBottom: hasPlan ? 10 : undefined }}>
-            {message.text}
+            {/* Ada answers in Markdown; her own turns are rendered, the user's
+                stay literal so nothing they type is reinterpreted. */}
+            {isAda ? <Markdown text={message.text} /> : message.text}
           </div>
         )}
 
