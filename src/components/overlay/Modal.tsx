@@ -43,16 +43,36 @@ export default function Modal({
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Escape closes; focus moves into the panel on open.
+  /* Every caller passes `onClose` as an inline arrow — `onClose={() =>
+     setOpen(false)}` — so its identity changes on every render of the screen
+     holding the sheet. These two concerns used to share one effect keyed on
+     `[open, onClose]`, which meant each of those renders re-ran it and called
+     `panelRef.current?.focus()` again, dragging focus out of whatever field
+     the user was in and onto the dialog itself (tabIndex -1, so the next
+     keystrokes went nowhere).
+
+     A screen with live queries re-renders on its own — React Query is set to
+     `refetchOnWindowFocus` with a 30s stale time — so this fired on nothing
+     more than tabbing away and back mid-form, which reads as "I can't type".
+
+     Splitting them fixes it: the key handler reads the latest `onClose`
+     through a ref, and focus moves exactly once, when the sheet opens. */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKey);
-    panelRef.current?.focus();
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.focus();
+  }, [open]);
 
   if (!open) return null;
 

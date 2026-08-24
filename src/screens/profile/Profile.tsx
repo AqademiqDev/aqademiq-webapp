@@ -22,6 +22,7 @@ import {
 } from '../../hooks/data';
 import { useAuth } from '../../hooks/useAuth';
 import { isEvening } from '../../lib/format';
+import { LINKS as SITE, openExternal } from '../../lib/links';
 
 /* ─────────────────────────────────────────────────────────────────────────
    Section 06 — Profile / Stats (frames 06.1–06.2).
@@ -43,15 +44,8 @@ const AVATARS: { expr: CubeExpr; cheeks?: boolean; sparkles?: boolean }[] = [
 ];
 
 /* no endpoint: the FAQ, the social account and the policy pages live on the
-   marketing site, not on the API — these open there rather than no-op. */
-const MARKETING = {
-  faq: 'https://aqademiq.com/faq',
-  instagram: 'https://instagram.com/aqademiq',
-  privacy: 'https://aqademiq.com/privacy',
-  terms: 'https://aqademiq.com/terms',
-};
-
-const openExternal = (url: string) => window.open(url, '_blank', 'noopener,noreferrer');
+   marketing site, not on the API — these open there rather than no-op.
+   The URLs themselves live in lib/links so onboarding agrees with this. */
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -97,11 +91,11 @@ export default function Profile() {
      lives on the feedback board, so this list has one feedback door. */
   const LINKS: { icon: string; label: string; onClick: () => void }[] = [
     { icon: 'chat_bubble_outline', label: 'Feedback & suggestions', onClick: () => navigate('/feedback') },
-    { icon: 'help_outline', label: 'FAQ', onClick: () => openExternal(MARKETING.faq) },
+    { icon: 'help_outline', label: 'FAQ', onClick: () => openExternal(SITE.faq) },
     {
       icon: 'camera_alt',
       label: 'Follow us on Instagram',
-      onClick: () => openExternal(MARKETING.instagram),
+      onClick: () => openExternal(SITE.instagram),
     },
   ];
 
@@ -232,7 +226,7 @@ export default function Profile() {
               >
                 <button
                   type="button"
-                  onClick={() => openExternal(MARKETING.privacy)}
+                  onClick={() => openExternal(SITE.privacy)}
                   className="focus-ring"
                   style={{ font: 'inherit', color: 'var(--text-secondary)', fontWeight: 700, borderRadius: 4 }}
                 >
@@ -241,7 +235,7 @@ export default function Profile() {
                 ·{' '}
                 <button
                   type="button"
-                  onClick={() => openExternal(MARKETING.terms)}
+                  onClick={() => openExternal(SITE.terms)}
                   className="focus-ring"
                   style={{ font: 'inherit', color: 'var(--text-secondary)', fontWeight: 700, borderRadius: 4 }}
                 >

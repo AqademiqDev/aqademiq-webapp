@@ -25,6 +25,7 @@ import {
 import { useAppState } from '../../hooks/useAppState';
 import { ApiError, type OnboardingInput } from '../../lib/api';
 import { sizeLabel } from '../../lib/format';
+import { LINKS } from '../../lib/links';
 
 /* ─────────────────────────────────────────────────────────────────────────
    Section 01 — Onboarding (frames 01.1–01.11).
@@ -378,8 +379,26 @@ export default function Onboarding() {
             {consentError && <ErrorLine style={{ marginTop: 10 }}>{consentError}</ErrorLine>}
             <div style={{ font: '600 10.5px/1.6 var(--font-sans)', color: 'var(--text-dim)', marginTop: 12 }}>
               By continuing you agree to our{' '}
-              <span style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Terms of Use</span> &amp;{' '}
-              <span style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Privacy Policy</span>.
+              <a
+                href={LINKS.terms}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="focus-ring"
+                style={{ color: 'var(--accent)', textDecoration: 'underline', borderRadius: 3 }}
+              >
+                Terms of Use
+              </a>{' '}
+              &amp;{' '}
+              <a
+                href={LINKS.privacy}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="focus-ring"
+                style={{ color: 'var(--accent)', textDecoration: 'underline', borderRadius: 3 }}
+              >
+                Privacy Policy
+              </a>
+              .
             </div>
           </Card>
         )}
