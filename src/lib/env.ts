@@ -30,3 +30,18 @@ if (!env.configured && import.meta.env.DEV) {
       'Copy .env.example to .env.local — auth and all data calls will fail until you do.',
   );
 }
+
+/* A key that is merely *present* is not a key that works.
+   `configured` only checks both values are non-empty, so pasting the project
+   URL into both variables sails through it: the client is built, the app
+   renders, and every auth call comes back 401 "Invalid API key" with nothing on
+   screen to say why. Supabase keys are either the `sb_publishable_…` form or a
+   JWT starting `eyJ`, so anything else is worth shouting about in every
+   environment — this is a deploy-time typo, and production is where it bites. */
+if (supabaseAnonKey && !/^(sb_(publishable|secret)_|eyJ)/.test(supabaseAnonKey)) {
+  console.error(
+    '[aqademiq] VITE_SUPABASE_ANON_KEY does not look like a Supabase key' +
+      (supabaseAnonKey.startsWith('http') ? ' — it looks like the project URL.' : '.') +
+      ' Expected it to start with "sb_publishable_" or "eyJ". Every auth call will fail with 401.',
+  );
+}
