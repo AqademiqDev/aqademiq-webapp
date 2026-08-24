@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/assets/aqademiq-logo.png" />
+    <!-- The splash paints the logo the moment React mounts, but the request for
+         it could not start until the bundle had parsed — so on anything slower
+         than a fast connection the intro played with an empty square where the
+         mark should be. Preloading starts the fetch during HTML parse instead. -->
+    <link rel="preload" as="image" href="/assets/aqademiq-logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aqademiq — Your focus sanctuary.</title>
 
