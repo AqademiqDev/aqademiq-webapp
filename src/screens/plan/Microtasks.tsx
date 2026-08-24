@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Content } from '../../layouts/AppShell';
 import AdaCube from '../../components/brand/AdaCube';
@@ -30,10 +30,16 @@ const occKey = (o: OccurrenceDto) =>
 export default function Microtasks() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
 
   // The id is an occurrence id and may carry a `@yyyy-MM-dd` suffix.
   const occId = decodeURIComponent(id ?? '');
-  const date = splitOccurrenceId(occId).date ?? todayIso();
+  /* `?date=` is what the plan actually had open. Only virtual occurrences carry
+     a date in their id, so without this a materialised task on any day but
+     today resolved against the wrong plan and rendered the "not on this day"
+     dead end. Order: explicit date -> id suffix -> today. */
+  const dateParam = params.get('date');
+  const date = dateParam || splitOccurrenceId(occId).date || todayIso();
 
   const day = useDayPlan(date);
   const lookups = useTaskLookups();

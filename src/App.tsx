@@ -9,6 +9,7 @@ import Welcome from './screens/entry/Welcome';
 import SignIn from './screens/entry/SignIn';
 import SignUp from './screens/entry/SignUp';
 import VerifyEmail from './screens/entry/VerifyEmail';
+import AuthCallback from './screens/entry/AuthCallback';
 import Onboarding from './screens/onboarding/Onboarding';
 
 import Dashboard from './screens/plan/Dashboard';
@@ -25,6 +26,7 @@ import Appearance from './screens/settings/panels/Appearance';
 import StudyTags from './screens/settings/panels/StudyTags';
 import Notifications from './screens/settings/panels/Notifications';
 import Prism from './screens/settings/panels/Prism';
+import ImportPanel from './screens/settings/panels/Import';
 import Account from './screens/settings/panels/Account';
 
 import DevComponents from './dev/DevComponents';
@@ -96,6 +98,9 @@ export default function App() {
         <Route path="/signin" element={<RedirectIfAuthed><SignIn /></RedirectIfAuthed>} />
         <Route path="/signup" element={<AllowGuestUpgrade><SignUp /></AllowGuestUpgrade>} />
         <Route path="/verify" element={<VerifyEmail />} />
+        {/* Ungated on purpose — the OAuth round trip lands here before a
+            session exists. */}
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/setup" element={<RequireAnySession><Onboarding /></RequireAnySession>} />
       </Route>
 
@@ -123,6 +128,7 @@ export default function App() {
           <Route path="tags" element={<StudyTags />} />
           <Route path="notifications" element={<Notifications />} />
           <Route path="prism" element={<Prism />} />
+          <Route path="import" element={<ImportPanel />} />
           <Route path="account" element={<Account />} />
         </Route>
       </Route>

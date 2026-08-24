@@ -4,12 +4,29 @@ import Input, { FieldDisplay } from '../../components/core/Input';
 import Modal from '../../components/overlay/Modal';
 import Toggle from '../../components/core/Toggle';
 import { errorMessage } from '../../components/core/Async';
-import { useActivateSemester, useCreateSemester } from '../../hooks/data';
+import {
+  useActivateSemester,
+  useCreateSemester,
+  useSemesterCards,
+  useUpdateSemester,
+} from '../../hooks/data';
 import { addMonths, fromIsoDate, monthLabel, todayIso } from '../../lib/format';
 
 /* Frame 03.4 — Create semester (sheet). Modal, max-width 460.
    POST /v1/semesters, then PATCH /v1/semesters/:id/activate when the sheet's
    "set as current" switch is on and the server didn't auto-activate it. */
+
+/**
+ * The name the API gives the term it invents when a subject is created before
+ * any semester exists (same default the onboarding wizard documents).
+ *
+ * Creating a subject first is the common path, so by the time someone opens
+ * this sheet they usually already own one of these — and POSTing on top of it
+ * left them with two terms, their subjects stranded in the placeholder and
+ * their "real" semester empty. When the placeholder is the *only* term and
+ * still carries that name, this sheet renames it in place instead.
+ */
+const SERVER_DEFAULT_NAME = 'My Semester';
 
 /** "Aug 1, 2026" — the drawn field label, now showing the picked day too. */
 function dateLabel(iso: string): string {
@@ -32,9 +49,37 @@ const PICKER_STYLE = {
   cursor: 'pointer',
 } as const;
 
+/**
+ * Open the native calendar on any click on the field.
+ *
+ * The input is `opacity: 0` so the drawn FieldDisplay shows through, which also
+ * hides the browser's calendar indicator — the only part of a date input that
+ * opens the picker on click. Without this the field silently took focus and the
+ * dates could not be changed at all. `showPicker` throws on browsers that
+ * refuse it outside a user gesture, so the failure is swallowed: the field is
+ * still keyboard-editable.
+ */
+function openPicker(e: React.MouseEvent<HTMLInputElement>) {
+  const el = e.currentTarget;
+  if (typeof el.showPicker !== 'function') return;
+  try {
+    el.showPicker();
+  } catch {
+    /* keyboard entry still works */
+  }
+}
+
 export default function CreateSemester({ open, onClose }: { open: boolean; onClose: () => void }) {
   const create = useCreateSemester();
+  const update = useUpdateSemester();
   const activate = useActivateSemester();
+  const semesters = useSemesterCards();
+
+  /** The lone server-invented placeholder, if that is all the account has. */
+  const placeholder =
+    semesters.raw.length === 1 && semesters.raw[0].name === SERVER_DEFAULT_NAME
+      ? semesters.raw[0]
+      : null;
 
   const [name, setName] = useState('');
   const [start, setStart] = useState(todayIso);
@@ -53,7 +98,7 @@ export default function CreateSemester({ open, onClose }: { open: boolean; onClo
     setFailure('');
   }, [open]);
 
-  const pending = create.isPending || activate.isPending;
+  const pending = create.isPending || update.isPending || activate.isPending;
 
   function create_() {
     if (!name.trim()) {
@@ -67,6 +112,28 @@ export default function CreateSemester({ open, onClose }: { open: boolean; onClo
       return;
     }
     setFailure('');
+
+    // Adopt the placeholder rather than adding a second term beside it, so the
+    // subjects already filed under it come along.
+    if (placeholder) {
+      update.mutate(
+        { id: placeholder.id, patch: { name: name.trim(), start, end } },
+        {
+          onSuccess: (semester) => {
+            if (asCurrent && !semester.is_active) {
+              activate.mutate(semester.id, {
+                onSuccess: () => onClose(),
+                onError: (e) => setFailure(errorMessage(e)),
+              });
+              return;
+            }
+            onClose();
+          },
+          onError: (e) => setFailure(errorMessage(e)),
+        },
+      );
+      return;
+    }
 
     create.mutate(
       { name: name.trim(), start, end },
@@ -110,6 +177,7 @@ export default function CreateSemester({ open, onClose }: { open: boolean; onClo
             value={start}
             max={end}
             aria-label="Semester start date"
+            onClick={openPicker}
             onChange={(e) => {
               if (!e.target.value) return;
               setStart(e.target.value);
@@ -125,6 +193,7 @@ export default function CreateSemester({ open, onClose }: { open: boolean; onClo
             value={end}
             min={start}
             aria-label="Semester end date"
+            onClick={openPicker}
             onChange={(e) => {
               if (!e.target.value) return;
               setEnd(e.target.value);
@@ -154,6 +223,21 @@ export default function CreateSemester({ open, onClose }: { open: boolean; onClo
         </div>
         <Toggle checked={asCurrent} onChange={setAsCurrent} aria-label="Set as current semester" />
       </div>
+
+      {placeholder && (
+        <div
+          style={{
+            font: '600 10.5px/1.5 var(--font-sans)',
+            color: 'var(--text-secondary)',
+            marginTop: -10,
+            marginBottom: 14,
+          }}
+        >
+          This renames your current “{SERVER_DEFAULT_NAME}” term, so the{' '}
+          {placeholder.name === SERVER_DEFAULT_NAME ? 'subjects already in it' : 'subjects'} stay
+          put.
+        </div>
+      )}
 
       {failure && (
         <div

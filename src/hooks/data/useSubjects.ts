@@ -72,7 +72,11 @@ const invalidateSemesters = () => {
 export function useCreateSubject() {
   return useMutation({
     mutationFn: (input: SubjectInput) => apiFns.createSubject(input),
-    onSuccess: invalidateSubjects,
+    // Creating the first subject makes the server invent a term to file it
+    // under, so the semester list is stale the moment this returns. Refreshing
+    // only `subjects` left the Semesters sheet insisting "No semesters yet" —
+    // which is what pushed people into creating a second, duplicate term.
+    onSuccess: invalidateSemesters,
   });
 }
 

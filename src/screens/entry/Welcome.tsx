@@ -6,6 +6,7 @@ import Button from '../../components/core/Button';
 import Icon from '../../components/core/Icon';
 import Input from '../../components/core/Input';
 import { errorMessage } from '../../components/core/Async';
+import ForgotPassword from './ForgotPassword';
 import { useAuth } from '../../hooks/useAuth';
 import { isEmail } from '../../lib/validate';
 
@@ -28,6 +29,7 @@ export default function Welcome() {
   const [formError, setFormError] = useState('');
   /** Which control started the in-flight call — only that one spins. */
   const [pending, setPending] = useState<Action | null>(null);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   async function submitPassword() {
     const next: typeof errors = {};
@@ -153,7 +155,7 @@ export default function Welcome() {
             error={errors.password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={onFieldKeyDown}
-            wrapperStyle={{ marginBottom: 18 }}
+            wrapperStyle={{ marginBottom: 8 }}
             trailing={
               <button
                 type="button"
@@ -166,6 +168,25 @@ export default function Welcome() {
               </button>
             }
           />
+
+          {/* The recovery flow existed in `useAuth` but had no entry point on
+              this pane — this is it. */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => setForgotOpen(true)}
+              disabled={busy}
+              className="focus-ring"
+              style={{
+                font: '700 11px var(--font-sans)',
+                color: 'var(--accent)',
+                borderRadius: 4,
+                opacity: busy ? 0.45 : 1,
+              }}
+            >
+              Forgot password?
+            </button>
+          </div>
 
           {formError && (
             <div
@@ -245,6 +266,17 @@ export default function Welcome() {
           </div>
         </div>
       </div>
+
+      <ForgotPassword
+        open={forgotOpen}
+        onClose={() => setForgotOpen(false)}
+        initialEmail={email}
+        onDone={() => {
+          // A verified recovery OTP leaves a live session, so go straight in.
+          setForgotOpen(false);
+          navigate('/plan', { replace: true });
+        }}
+      />
     </div>
   );
 }

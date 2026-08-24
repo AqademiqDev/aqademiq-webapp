@@ -293,6 +293,23 @@
   }
 }
 
+/* The running cube's slow breath — see IceTimer. Scale only, so it composes
+   with the melt geometry instead of fighting it. */
+@keyframes aqIceAlive {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.035) translateY(-1.5px);
+  }
+}
+
+.aq-ice-alive {
+  animation: aqIceAlive 3.4s ease-in-out infinite;
+  transform-origin: 50% 70%;
+}
+
 @keyframes aqShimmer {
   0%,
   100% {

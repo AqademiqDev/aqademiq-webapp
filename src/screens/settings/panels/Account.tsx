@@ -10,7 +10,14 @@ import { ErrorState, Loading, errorMessage } from '../../../components/core/Asyn
 import { EyebrowLabel } from '../../../components/core/Misc';
 import { InlineError, PanelHead, ValueRow } from '../Settings';
 import { useAuth } from '../../../hooks/useAuth';
-import { useDeleteAccount, useExportData, useProfile, useUpdateProfile } from '../../../hooks/data';
+import {
+  useDeleteAccount,
+  useExportData,
+  useProfile,
+  useStats,
+  useStreak,
+  useUpdateProfile,
+} from '../../../hooks/data';
 import { isEmail, isPassword, MIN_PASSWORD } from '../../../lib/validate';
 
 /* Frames 13.4 (Profile & Account) + 13.6 / 13.7 / 13.8 / 13.9 sheets. */
@@ -37,6 +44,12 @@ export default function Account() {
   const { isGuest, busy, linkGuestAccount, signOut } = useAuth();
 
   const profile = useProfile();
+  /* The streak had no home in Settings at all — it only ever appeared on the
+     Profile/stats screen, so this panel looked like it was showing a stale (in
+     fact absent) value. Both queries are invalidated by every mood, task and
+     focus write, so this stays live without a refresh. */
+  const streak = useStreak();
+  const stats = useStats();
   const updateProfile = useUpdateProfile();
   const deleteAccount = useDeleteAccount();
   const exportData = useExportData();
@@ -171,6 +184,26 @@ export default function Account() {
                 PNG or JPG, up to 4 MB
               </div>
             </div>
+          </div>
+
+          <EyebrowLabel style={{ marginBottom: 4 }}>ACTIVITY</EyebrowLabel>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 18, maxWidth: 560 }}>
+            <MiniStat
+              value={String(streak.data?.current_streak ?? stats.data?.current_streak ?? 0)}
+              label="DAY STREAK"
+              accent
+              loading={streak.isLoading && stats.isLoading}
+            />
+            <MiniStat
+              value={String(stats.data?.total_active_days ?? streak.data?.total_active_days ?? 0)}
+              label="ACTIVE DAYS"
+              loading={stats.isLoading}
+            />
+            <MiniStat
+              value={String(stats.data?.completed_tasks ?? 0)}
+              label="TASKS DONE"
+              loading={stats.isLoading}
+            />
           </div>
 
           <EyebrowLabel style={{ marginBottom: 4 }}>PROFILE</EyebrowLabel>
@@ -394,6 +427,36 @@ export default function Account() {
         </Button>
       </Modal>
     </>
+  );
+}
+
+/** Compact stat tile for the Settings activity strip. */
+function MiniStat({
+  value,
+  label,
+  accent = false,
+  loading = false,
+}: {
+  value: string;
+  label: string;
+  accent?: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        background: 'var(--surface-page)',
+        borderRadius: 14,
+        padding: '12px 14px',
+        textAlign: 'center',
+      }}
+    >
+      <div className="h-num" style={{ fontSize: 26, color: accent ? 'var(--accent)' : undefined }}>
+        {loading ? '—' : value}
+      </div>
+      <EyebrowLabel style={{ marginTop: 2 }}>{label}</EyebrowLabel>
+    </div>
   );
 }
 

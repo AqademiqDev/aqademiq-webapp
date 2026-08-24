@@ -3,26 +3,25 @@ import { useNavigate } from 'react-router-dom';
 
 import { Content } from '../../layouts/AppShell';
 import AdaCube, { type CubeExpr } from '../../components/brand/AdaCube';
-import Button from '../../components/core/Button';
 import Card from '../../components/core/Card';
 import Icon from '../../components/core/Icon';
-import Modal from '../../components/overlay/Modal';
 import { EyebrowLabel } from '../../components/core/Misc';
-import { AsyncSection, ErrorState, Loading, errorMessage } from '../../components/core/Async';
+import { AsyncSection, ErrorState, Loading } from '../../components/core/Async';
 import { MoodWeek } from '../../components/content/MoodScale';
 import InviteHero from '../../components/content/InviteHero';
 import ReferralSheet from './ReferralSheet';
 import GuestStatsLocked from './GuestStatsLocked';
 import MorningCheckIn from '../mood/MorningCheckIn';
+import EveningReflection from '../mood/EveningReflection';
 import {
   useMoodWeek,
   useProfile,
   useStats,
   useStreak,
-  useSubmitRating,
   useWeekCount,
 } from '../../hooks/data';
 import { useAuth } from '../../hooks/useAuth';
+import { isEvening } from '../../lib/format';
 
 /* ─────────────────────────────────────────────────────────────────────────
    Section 06 — Profile / Stats (frames 06.1–06.2).
@@ -66,7 +65,7 @@ export default function Profile() {
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [moodOpen, setMoodOpen] = useState(false);
-  const [rateOpen, setRateOpen] = useState(false);
+  const [reflectionOpen, setReflectionOpen] = useState(false);
 
   // Identity + tiles all render together, so they share one async switch.
   const summary = {
@@ -93,9 +92,11 @@ export default function Profile() {
   const activeDays = week.data?.count ?? 0;
   const weekPct = Math.round((activeDays / 7) * 100);
 
+  /* "Rate the app" used to sit right above "Share feedback" — two rows for the
+     same intent, which is the duplication people kept reporting. The rating now
+     lives on the feedback board, so this list has one feedback door. */
   const LINKS: { icon: string; label: string; onClick: () => void }[] = [
-    { icon: 'star_outline', label: 'Rate the app', onClick: () => setRateOpen(true) },
-    { icon: 'chat_bubble_outline', label: 'Share feedback', onClick: () => navigate('/feedback') },
+    { icon: 'chat_bubble_outline', label: 'Feedback & suggestions', onClick: () => navigate('/feedback') },
     { icon: 'help_outline', label: 'FAQ', onClick: () => openExternal(MARKETING.faq) },
     {
       icon: 'camera_alt',
@@ -159,9 +160,12 @@ export default function Profile() {
                 }}
               >
                 <span style={{ font: '800 13px var(--font-sans)' }}>Mood this week</span>
+                {/* Was always the morning check-in, so after 17:00 there was no
+                    way to reach the evening reflection from here at all — the
+                    Plan screen already picks by time of day. */}
                 <button
                   type="button"
-                  onClick={() => setMoodOpen(true)}
+                  onClick={() => (isEvening() ? setReflectionOpen(true) : setMoodOpen(true))}
                   className="focus-ring"
                   style={{ font: '700 11px var(--font-sans)', color: 'var(--accent)', borderRadius: 4 }}
                 >
@@ -175,7 +179,13 @@ export default function Profile() {
               ) : mood.isError ? (
                 <ErrorState error={mood.error} onRetry={mood.refetch} padding={6} />
               ) : (
-                <MoodWeek days={mood.days} size={34} dashSize={32} />
+                <>
+                  <MoodWeek days={mood.days} size={34} dashSize={32} />
+                  <TodayNote
+                    intention={mood.todayEntry?.intention ?? null}
+                    reflection={mood.todayEntry?.reflection ?? null}
+                  />
+                </>
               )}
             </Card>
 
@@ -282,8 +292,52 @@ export default function Profile() {
 
       <ReferralSheet open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <MorningCheckIn open={moodOpen} onClose={() => setMoodOpen(false)} />
-      <RateAppModal open={rateOpen} onClose={() => setRateOpen(false)} />
+      <EveningReflection open={reflectionOpen} onClose={() => setReflectionOpen(false)} />
     </>
+  );
+}
+
+/**
+ * Today's intention and reflection, under the mood strip.
+ *
+ * Both are written (morning check-in / evening reflection) and both come back
+ * on the week payload, but nothing rendered them — so the stats screen showed a
+ * row of circles and no trace of anything the user had actually typed.
+ */
+function TodayNote({ intention, reflection }: { intention: string | null; reflection: string | null }) {
+  const rows = [
+    { label: 'TODAY’S INTENTION', value: intention?.trim() },
+    { label: 'TONIGHT’S REFLECTION', value: reflection?.trim() },
+  ].filter((r) => r.value);
+
+  if (!rows.length) {
+    return (
+      <div
+        style={{
+          font: '600 10.5px/1.5 var(--font-sans)',
+          color: 'var(--text-dim)',
+          marginTop: 14,
+          paddingTop: 12,
+          borderTop: '1px solid var(--border-hairline)',
+        }}
+      >
+        Nothing written today yet — “Log today” saves an intention this morning and a
+        reflection tonight.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-hairline)' }}>
+      {rows.map((r, i) => (
+        <div key={r.label} style={{ marginTop: i ? 10 : 0 }}>
+          <EyebrowLabel style={{ marginBottom: 3 }}>{r.label}</EyebrowLabel>
+          <div style={{ font: '600 12px/1.55 var(--font-sans)', color: 'var(--text-secondary)' }}>
+            {r.value}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -306,73 +360,5 @@ function StatCard({
       </div>
       <EyebrowLabel style={{ marginTop: 3 }}>{label}</EyebrowLabel>
     </Card>
-  );
-}
-
-/** "Rate the app" — POST /ratings takes a 1–5 star score. */
-function RateAppModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [stars, setStars] = useState(0);
-  const submit = useSubmitRating();
-
-  const close = () => {
-    submit.reset();
-    setStars(0);
-    onClose();
-  };
-
-  const send = () => {
-    if (stars < 1) return;
-    submit.mutate({ rating: stars }, { onSuccess: close });
-  };
-
-  return (
-    <Modal open={open} onClose={close} title="Rate the app" maxWidth={420} aria-label="Rate the app">
-      <div
-        style={{
-          font: '600 12px/1.5 var(--font-sans)',
-          color: 'var(--text-secondary)',
-          marginBottom: 14,
-        }}
-      >
-        How is Aqademiq treating you so far?
-      </div>
-
-      <div role="radiogroup" aria-label="Rating" style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            type="button"
-            role="radio"
-            aria-checked={stars === n}
-            aria-label={n === 1 ? '1 star' : `${n} stars`}
-            onClick={() => setStars(n)}
-            className="aq-press focus-ring"
-            style={{ display: 'flex', borderRadius: 8, padding: 4 }}
-          >
-            <Icon
-              name={n <= stars ? 'star' : 'star_outline'}
-              size={30}
-              color={n <= stars ? 'var(--accent)' : 'var(--text-dim)'}
-            />
-          </button>
-        ))}
-      </div>
-
-      {submit.isError && (
-        <div
-          style={{
-            font: '700 11.5px/1.5 var(--font-sans)',
-            color: 'var(--aq-danger)',
-            marginBottom: 12,
-          }}
-        >
-          {errorMessage(submit.error)}
-        </div>
-      )}
-
-      <Button full onClick={send} disabled={stars < 1} loading={submit.isPending}>
-        Send rating
-      </Button>
-    </Modal>
   );
 }

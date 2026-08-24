@@ -133,6 +133,8 @@ export default function Dashboard() {
   const [anytimeOpen, setAnytimeOpen] = useState(true);
   const [plannedOpen, setPlannedOpen] = useState(true);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  /** `HH:mm` the timeline's per-slot add should preselect ('' = Anytime). */
+  const [newTaskTime, setNewTaskTime] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [morningOpen, setMorningOpen] = useState(false);
   const [eveningOpen, setEveningOpen] = useState(false);
@@ -256,7 +258,19 @@ export default function Dashboard() {
     else setDate((d) => addDays(d, dir));
   };
 
-  const openTask = (id: string) => navigate(`/plan/task/${encodeURIComponent(id)}`);
+  /* The occurrence id only carries a date for *virtual* (repeating) rows, so a
+     materialised task arrived at Microtasks with nothing to say which day it
+     belonged to and the screen fell back to today — a task planned for any
+     other day opened straight onto "That task is not on this day". The viewed
+     day rides along in the query string instead. */
+  const openTask = (id: string) =>
+    navigate(`/plan/task/${encodeURIComponent(id)}?date=${date}`);
+
+  /** Every add control routes through here so the sheet's time is explicit. */
+  const openNewTask = (time = '') => {
+    setNewTaskTime(time);
+    setNewTaskOpen(true);
+  };
 
   const renderTask = (t: Task) => (
     <TaskCard
@@ -293,7 +307,7 @@ export default function Dashboard() {
       }
       action={
         withAction ? (
-          <Button variant="soft" icon="add" iconSize={16} onClick={() => setNewTaskOpen(true)}>
+          <Button variant="soft" icon="add" iconSize={16} onClick={() => openNewTask()}>
             New task
           </Button>
         ) : undefined
@@ -745,9 +759,29 @@ export default function Dashboard() {
                       >
                         {g.tasks.map(renderTask)}
                       </div>
+
+                      {/* Timeline grouping had no add control at all — the
+                          dashed row only ever rendered in the List branch. This
+                          adds into the slot it sits beside, so a 9:00 AM "+"
+                          opens the sheet already set to 9:00 AM. */}
+                      <AddSlotButton
+                        label={g.timed ? `New task at ${g.label}${g.sub ? ` ${g.sub}` : ''}` : 'New anytime task'}
+                        onClick={() => openNewTask(g.timed ? toHhMm(g.tasks[0]?.time) : '')}
+                      />
                     </div>
                   ))}
                 </div>
+
+                <Button
+                  variant="dashed"
+                  icon="add"
+                  iconSize={18}
+                  full
+                  onClick={() => openNewTask()}
+                  style={{ borderRadius: 14, padding: 12, marginTop: 12 }}
+                >
+                  New task
+                </Button>
               </AsyncSection>
             ) : (
               /* 02.1 — collapsible ANYTIME / PLANNED sections */
@@ -788,7 +822,7 @@ export default function Dashboard() {
                   icon="add"
                   iconSize={18}
                   full
-                  onClick={() => setNewTaskOpen(true)}
+                  onClick={() => openNewTask()}
                   style={{ borderRadius: 14, padding: 12, marginTop: 12 }}
                 >
                   New task
@@ -879,10 +913,57 @@ export default function Dashboard() {
         </div>
       </Content>
 
-      <NewTaskModal open={newTaskOpen} onClose={() => setNewTaskOpen(false)} date={date} />
+      <NewTaskModal
+        open={newTaskOpen}
+        onClose={() => setNewTaskOpen(false)}
+        date={date}
+        initialTime={newTaskTime}
+      />
       <MorningCheckIn open={morningOpen} onClose={() => setMorningOpen(false)} />
       <EveningReflection open={eveningOpen} onClose={() => setEveningOpen(false)} />
     </>
+  );
+}
+
+/**
+ * "12:00 PM" / "9:00 AM" back to the `HH:mm` the new-task sheet expects.
+ * The timeline groups key on the formatted clock, not the wire value.
+ */
+function toHhMm(clock: string | undefined): string {
+  if (!clock) return '';
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(clock.trim());
+  if (!m) return '';
+  let hour = Number(m[1]);
+  const suffix = m[3]?.toUpperCase();
+  if (suffix === 'PM' && hour !== 12) hour += 12;
+  if (suffix === 'AM' && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, '0')}:${m[2]}`;
+}
+
+/** The small "+" that sits to the right of a timeline slot. */
+function AddSlotButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="aq-press aq-darken focus-ring"
+      style={{
+        alignSelf: 'flex-start',
+        marginTop: 4,
+        width: 26,
+        height: 26,
+        borderRadius: '50%',
+        background: 'var(--surface-page)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <Icon name="add" size={16} color="var(--text-secondary)" />
+    </button>
   );
 }
 

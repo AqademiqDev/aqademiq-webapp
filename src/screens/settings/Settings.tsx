@@ -13,6 +13,7 @@ const CATEGORIES = [
   { to: '/settings/tags', icon: 'sell', label: 'Study tags' },
   { to: '/settings/notifications', icon: 'notifications_none', label: 'Notifications' },
   { to: '/settings/prism', icon: 'graphic_eq', label: 'Prism' },
+  { to: '/settings/import', icon: 'ios_share', label: 'Import' },
   { to: '/settings/account', icon: 'shield', label: 'Profile & Account' },
 ];
 

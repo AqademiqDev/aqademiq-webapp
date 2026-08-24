@@ -171,7 +171,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       run(async () => {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
-          options: { redirectTo: `${window.location.origin}/plan` },
+          // `/auth/callback` is ungated and reads the provider's error params;
+          // `/plan` is behind RequireSession, which could redirect away with the
+          // `?code=` still unexchanged and reported nothing when Google refused.
+          // This exact URL has to be allow-listed in Supabase for every origin.
+          options: { redirectTo: `${window.location.origin}/auth/callback` },
         });
         raise(error);
       }),

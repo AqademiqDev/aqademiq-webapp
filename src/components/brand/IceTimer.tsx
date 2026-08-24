@@ -75,10 +75,17 @@ export default function IceTimer({
         />
       </svg>
 
-      <AdaCube size={size * 0.6} tone={CUBE_TONES[4]} melt={p} expr={expr} bubbles={3} />
+      {/* The melt fraction advances ~1/1500 per tick on a 25-minute session, so
+          on its own the cube looks frozen. `aq-ice-alive` adds the slow breath
+          that makes a running timer read as *running*; the melt itself still
+          carries the real progress. */}
+      <div className={drip ? 'aq-ice-alive' : undefined} style={{ display: 'flex' }}>
+        <AdaCube size={size * 0.6} tone={CUBE_TONES[4]} melt={p} expr={expr} bubbles={3} />
+      </div>
 
+      {/* Drops used to wait for p > 0.08 — two full minutes of a 25-minute
+          session with nothing moving. They now start with the clock. */}
       {drip &&
-        p > 0.08 &&
         [0, 1].map((i) => (
           <div
             key={i}

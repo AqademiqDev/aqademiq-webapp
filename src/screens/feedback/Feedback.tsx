@@ -10,6 +10,7 @@ import { EyebrowLabel } from '../../components/core/Misc';
 import { AsyncSection, errorMessage } from '../../components/core/Async';
 import Popover from '../../components/overlay/Popover';
 import SuggestModal from './SuggestModal';
+import RateAppModal from './RateApp';
 import { InlineError, SuggestionRow, toSuggestion } from './parts';
 import {
   useBoardCanParticipate,
@@ -61,6 +62,9 @@ export default function Feedback() {
   const [sort, setSort] = useState<SortKey>('top');
   const [sortOpen, setSortOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  /* Home for the star rating, which used to be a second feedback row on the
+     stats screen. One destination, both intents. */
+  const [rateOpen, setRateOpen] = useState(false);
   const [suggestCategory, setSuggestCategory] = useState<string | undefined>(undefined);
 
   const meta = useBoardMeta();
@@ -188,6 +192,14 @@ export default function Feedback() {
               {viewToggle}
               {sortPill}
               <Button
+                variant="ghost"
+                icon="star_outline"
+                onClick={() => setRateOpen(true)}
+                style={{ width: 'auto', padding: '0 16px', height: 42 }}
+              >
+                Rate the app
+              </Button>
+              <Button
                 icon="add"
                 onClick={() => openSuggest()}
                 style={{ width: 'auto', padding: '0 18px', height: 42 }}
@@ -206,6 +218,7 @@ export default function Feedback() {
           initialCategory={suggestCategory}
         />
         <SortPopover open={sortOpen} onClose={() => setSortOpen(false)} value={sort} onChange={setSort} />
+        <RateAppModal open={rateOpen} onClose={() => setRateOpen(false)} />
       </>
     );
   }
@@ -227,13 +240,23 @@ export default function Feedback() {
               {backButton}
               <div style={{ font: '800 24px var(--font-sans)', letterSpacing: '-.4px' }}>Feedback</div>
             </div>
-            <Button
-              icon="add"
-              onClick={() => openSuggest()}
-              style={{ width: 'auto', padding: '0 20px', height: 42 }}
-            >
-              Make a suggestion
-            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Button
+                variant="ghost"
+                icon="star_outline"
+                onClick={() => setRateOpen(true)}
+                style={{ width: 'auto', padding: '0 16px', height: 42 }}
+              >
+                Rate the app
+              </Button>
+              <Button
+                icon="add"
+                onClick={() => openSuggest()}
+                style={{ width: 'auto', padding: '0 20px', height: 42 }}
+              >
+                Make a suggestion
+              </Button>
+            </div>
           </div>
 
           {/* Info banner */}
@@ -372,6 +395,7 @@ export default function Feedback() {
         initialCategory={suggestCategory}
       />
       <SortPopover open={sortOpen} onClose={() => setSortOpen(false)} value={sort} onChange={setSort} />
+      <RateAppModal open={rateOpen} onClose={() => setRateOpen(false)} />
     </>
   );
 }

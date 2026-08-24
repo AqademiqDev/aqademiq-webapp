@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 import Button from '../../components/core/Button';
@@ -8,6 +8,7 @@ import TagChip from '../../components/core/TagChip';
 import { EyebrowLabel } from '../../components/core/Misc';
 import { ErrorState, Loading, errorMessage } from '../../components/core/Async';
 import { useCreateTask, useStudyTags, useSubjects } from '../../hooks/data';
+import { useDictation } from '../../hooks/useDictation';
 import { ApiError, type OccurrenceDto, type RepeatKind } from '../../lib/api';
 import {
   addDays,
@@ -128,12 +129,15 @@ export default function NewTaskModal({
   open,
   onClose,
   date = todayIso(),
+  initialTime = '',
   onCreated,
 }: {
   open: boolean;
   onClose: () => void;
   /** The day the plan is showing — the new task lands there by default. */
   date?: string;
+  /** `HH:mm` to preselect, so the timeline's per-slot add lands on its own row. */
+  initialTime?: string;
   onCreated?: (task: OccurrenceDto) => void;
 }) {
   const subjects = useSubjects();
@@ -151,6 +155,19 @@ export default function NewTaskModal({
   const [submitError, setSubmitError] = useState('');
   const [needsSubject, setNeedsSubject] = useState(false);
 
+  /* Voice input. The base is whatever was typed before the mic opened, so
+     interim results replace only the dictated tail instead of wiping the
+     field on every partial. */
+  const dictationBase = useRef('');
+  const dictation = useDictation((text, final) => {
+    const base = dictationBase.current;
+    const next = base ? `${base} ${text}` : text;
+    setTitle(next.slice(0, 140));
+    setTitleError('');
+    if (final) dictationBase.current = next;
+  });
+  const dictationStop = dictation.stop;
+
   // A fresh sheet every time it opens, anchored on the day the plan is showing.
   useEffect(() => {
     if (!open) return;
@@ -158,13 +175,21 @@ export default function NewTaskModal({
     setSubjectId('');
     setTagId('');
     setDay(date);
-    setTime('');
+    setTime(initialTime);
     setDuration(1800);
     setRepeatIdx(0);
     setTitleError('');
     setSubmitError('');
     setNeedsSubject(false);
-  }, [open, date]);
+    dictationBase.current = '';
+  }, [open, date, initialTime]);
+
+  /* The sheet is never unmounted — `open` only toggles — so without this a mic
+     left running stayed running behind a closed sheet, and reopening showed a
+     stuck "Listening…" field. */
+  useEffect(() => {
+    if (!open) dictationStop();
+  }, [open, dictationStop]);
 
   const today = todayIso();
   const dayOptions = useMemo(() => {
@@ -214,30 +239,78 @@ export default function NewTaskModal({
 
   return (
     <Modal open={open} onClose={onClose} title="New task" maxWidth={500}>
-      <input
-        value={title}
-        autoFocus
-        aria-label="Task title"
-        placeholder="Task title"
-        onChange={(e) => {
-          setTitle(e.target.value);
-          setTitleError('');
-        }}
-        className="focus-ring"
+      {/* The mic only renders where the Web Speech API actually exists — a dead
+          mic button was the whole complaint. */}
+      <div
         style={{
-          width: '100%',
-          font: '700 18px var(--font-sans)',
-          padding: '10px 0',
-          border: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
           borderBottom: `1.5px solid ${titleError ? 'var(--aq-danger)' : 'var(--accent)'}`,
-          background: 'transparent',
-          outline: 'none',
-          color: 'var(--text-primary)',
-          marginBottom: titleError ? 6 : 18,
-          borderRadius: 0,
+          marginBottom: titleError || dictation.error ? 6 : 18,
         }}
-      />
+      >
+        <input
+          value={title}
+          autoFocus
+          aria-label="Task title"
+          placeholder={dictation.listening ? 'Listening…' : 'Task title'}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            // Typing re-anchors what dictation appends to.
+            dictationBase.current = e.target.value;
+            setTitleError('');
+          }}
+          className="focus-ring"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            font: '700 18px var(--font-sans)',
+            padding: '10px 0',
+            border: 0,
+            background: 'transparent',
+            outline: 'none',
+            color: 'var(--text-primary)',
+            borderRadius: 0,
+          }}
+        />
+
+        {dictation.supported && (
+          <button
+            type="button"
+            onClick={() => {
+              dictationBase.current = title.trim();
+              dictation.toggle();
+            }}
+            aria-label={dictation.listening ? 'Stop dictating' : 'Dictate the task title'}
+            aria-pressed={dictation.listening}
+            title={dictation.listening ? 'Stop dictating' : 'Dictate the task title'}
+            className="aq-press focus-ring"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 34,
+              height: 34,
+              flexShrink: 0,
+              borderRadius: '50%',
+              background: dictation.listening ? 'var(--accent)' : 'var(--surface-page)',
+              animation: dictation.listening ? 'aqShimmer 1.4s ease-in-out infinite' : undefined,
+            }}
+          >
+            <Icon
+              name={dictation.listening ? 'stop_circle' : 'mic'}
+              size={18}
+              color={dictation.listening ? '#fff' : 'var(--text-secondary)'}
+            />
+          </button>
+        )}
+      </div>
+
       {titleError && <div style={{ ...errorStyle, marginBottom: 14 }}>{titleError}</div>}
+      {!titleError && dictation.error && (
+        <div style={{ ...errorStyle, marginBottom: 14 }}>{dictation.error}</div>
+      )}
 
       <EyebrowLabel style={{ marginBottom: 9 }}>SUBJECT</EyebrowLabel>
       <ChipRow

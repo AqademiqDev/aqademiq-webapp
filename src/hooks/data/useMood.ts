@@ -44,7 +44,21 @@ export function useMoodWeek(date?: string) {
     }));
   }, [query.data]);
 
-  return { ...query, days, weekStartIso: query.data?.week_start ?? weekStart(date) };
+  /* The week payload already carries each day's `intention` and `reflection`,
+     but only `mood_index` was ever read — so everything written by the morning
+     check-in and the evening reflection was invisible. Hand the raw entries
+     back so a screen can show what was actually written. */
+  const entries = query.data?.days ?? [];
+  const today = todayIso();
+  const todayEntry = entries.find((d) => d.date === today) ?? null;
+
+  return {
+    ...query,
+    days,
+    entries,
+    todayEntry,
+    weekStartIso: query.data?.week_start ?? weekStart(date),
+  };
 }
 
 const invalidateMood = () => {
