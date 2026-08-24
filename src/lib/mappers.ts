@@ -72,6 +72,12 @@ export function toTask(occ: OccurrenceDto, subjects: SubjectLookup, tags: TagLoo
     bar: Boolean(time),
     time,
     done: occ.status === 'COMPLETE',
+    /* The day payload has always carried these — the plan just threw them
+       away, so a task Ada had broken into steps looked exactly like one it
+       hadn't. */
+    steps: occ.steps?.length
+      ? occ.steps.map((s) => ({ id: s.id, title: s.title, done: s.status === 'COMPLETE' }))
+      : undefined,
   };
 }
 

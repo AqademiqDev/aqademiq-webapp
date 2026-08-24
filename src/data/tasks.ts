@@ -18,6 +18,15 @@ export interface Task {
   /** Absent = "Anytime". */
   time?: string;
   done?: boolean;
+  /** Ada's breakdown, when the task has one. */
+  steps?: TaskStep[];
+}
+
+/** One line of an Ada breakdown, as the plan renders it. */
+export interface TaskStep {
+  id: string;
+  title: string;
+  done: boolean;
 }
 
 /** The task picker on the Focus screen (frame 04.4). */

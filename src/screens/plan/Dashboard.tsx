@@ -272,6 +272,13 @@ export default function Dashboard() {
     setNewTaskOpen(true);
   };
 
+  /* Step ticks are session-only: the API exposes breakdown and clear, but no
+     per-step write — every one of the 300-odd steps on the server is still
+     `pending`. Mobile behaves the same way, so this matches rather than
+     inventing persistence the backend cannot keep. */
+  const [stepDone, setStepDone] = useState<Record<string, boolean>>({});
+  const toggleStep = (id: string) => setStepDone((prev) => ({ ...prev, [id]: !prev[id] }));
+
   const renderTask = (t: Task) => (
     <TaskCard
       key={t.id}
@@ -282,6 +289,8 @@ export default function Dashboard() {
       color={t.color}
       bar={t.bar}
       done={t.done}
+      steps={t.steps?.map((s) => ({ ...s, done: s.done || Boolean(stepDone[s.id]) }))}
+      onToggleStep={toggleStep}
       onToggle={() => toggle.mutate(t.id)}
       onClick={() => openTask(t.id)}
     />
