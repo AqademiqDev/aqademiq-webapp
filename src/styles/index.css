@@ -320,6 +320,43 @@
   }
 }
 
+/* ── Splash progress dots ──────────────────────────────────────────────
+   Frame 00.1 drew these as a static "1 of 3" state — one accent dot, two
+   dim — and that is exactly how they shipped: three hardcoded spans with
+   nothing moving them. During a 1.6s hold that reads as a frozen screen.
+   The highlight now walks across the three, which is what the beat was
+   always meant to suggest. Base opacity keeps them visible if the
+   animation is suppressed for reduced motion. */
+@keyframes aqSplashDot {
+  0%,
+  65%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.85);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+
+.aq-splash-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.3;
+  animation: aqSplashDot 1.4s ease-in-out infinite;
+}
+
+.aq-splash-dots span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.aq-splash-dots span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
 /* ── Screen / overlay motion (README §6) ───────────────────────────── */
 @keyframes aqFadeUp {
   from {

@@ -56,10 +56,17 @@ export default function Splash() {
         >
           Your focus sanctuary.
         </div>
-        <div style={{ display: 'flex', gap: 7, justifyContent: 'center', marginTop: 30 }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)' }} />
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--text-dim)', opacity: 0.45 }} />
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--text-dim)', opacity: 0.45 }} />
+        {/* Styling lives in index.css so the three dots can stagger off
+            :nth-child — inline styles cannot express the delays. */}
+        <div
+          className="aq-splash-dots"
+          role="status"
+          aria-label="Loading"
+          style={{ display: 'flex', gap: 7, justifyContent: 'center', marginTop: 30 }}
+        >
+          <span />
+          <span />
+          <span />
         </div>
       </div>
     </div>
