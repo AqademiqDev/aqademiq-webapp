@@ -6,7 +6,12 @@
    so the two clients stay in step.
 
    Every mode reuses the focus-mode stems with a different subset — there is
-   only one set of audio. */
+   only one set of audio.
+
+   The files are AAC in an MP4 container, not the Ogg Vorbis the Flutter app
+   bundles: Safari does not decode Ogg Vorbis, which would have left the whole
+   soundscape silent there. Re-encoding also halved the payload (17 MB → 8 MB)
+   — the source pads were six- and four-minute beds at ~240 kbps. */
 
 /** The four psychoacoustic layers (architecture §4).
  *
@@ -39,25 +44,25 @@ const stem = (path: string, type: LayerType, note?: string, probability = 1): St
 
 /* ── The catalogue ─────────────────────────────────────────────────── */
 
-const PAD_SLOW = stem('pads/572778__deadrobotmusic__fubfmf-slow-f-sharp-minor.ogg', 'pad', 'F#');
+const PAD_SLOW = stem('pads/572778__deadrobotmusic__fubfmf-slow-f-sharp-minor.m4a', 'pad', 'F#');
 const PAD_CHOIR = stem(
-  'pads/808032__deadrobotmusic__ambient-f-sharp-minor-ethereal-choir-pad-1.ogg',
+  'pads/808032__deadrobotmusic__ambient-f-sharp-minor-ethereal-choir-pad-1.m4a',
   'pad',
   'F#',
 );
 
-const TEX_RAIN = stem('textures/mixkit-light-rain-loop-2393.ogg', 'texture', 'pink');
-const TEX_HUM = stem('textures/mixkit-space-ship-hum-2136.ogg', 'texture', 'brown');
-const TEX_SEA = stem('textures/mixkit-windy-sea-loop-1200.ogg', 'texture', 'pink');
+const TEX_RAIN = stem('textures/mixkit-light-rain-loop-2393.m4a', 'texture', 'pink');
+const TEX_HUM = stem('textures/mixkit-space-ship-hum-2136.m4a', 'texture', 'brown');
+const TEX_SEA = stem('textures/mixkit-windy-sea-loop-1200.m4a', 'texture', 'pink');
 
-const PULSE_DREAMS = stem('pulses/Cymatics - Dreams Synth Bass - E.ogg', 'pulse', 'E', 0.6);
-const PULSE_808 = stem('pulses/Cymatics - Eternity 808 - E.ogg', 'pulse', 'E', 0.4);
+const PULSE_DREAMS = stem('pulses/Cymatics - Dreams Synth Bass - E.m4a', 'pulse', 'E', 0.6);
+const PULSE_808 = stem('pulses/Cymatics - Eternity 808 - E.m4a', 'pulse', 'E', 0.4);
 
-const SPARK_KALIMBA = stem('sparks/kalimba-hit-note-high-f_F_minor.ogg', 'spark', 'F');
-const SPARK_PLUCK = stem('sparks/pluck-shot-c-key.ogg', 'spark', 'C');
-const SPARK_RHODES_BASSY = stem('sparks/rhodes-piano-one-shots-bassy_F.ogg', 'spark', 'F');
-const SPARK_RHODES_FULL = stem('sparks/rhodes-piano-one-shots-full_F.ogg', 'spark', 'F');
-const SPARK_RHODES_WARM = stem('sparks/rhodes-piano-one-shots-warm-fat_F.ogg', 'spark', 'F');
+const SPARK_KALIMBA = stem('sparks/kalimba-hit-note-high-f_F_minor.m4a', 'spark', 'F');
+const SPARK_PLUCK = stem('sparks/pluck-shot-c-key.m4a', 'spark', 'C');
+const SPARK_RHODES_BASSY = stem('sparks/rhodes-piano-one-shots-bassy_F.m4a', 'spark', 'F');
+const SPARK_RHODES_FULL = stem('sparks/rhodes-piano-one-shots-full_F.m4a', 'spark', 'F');
+const SPARK_RHODES_WARM = stem('sparks/rhodes-piano-one-shots-warm-fat_F.m4a', 'spark', 'F');
 
 export interface SoundManifest {
   pads: Stem[];

@@ -62,7 +62,10 @@ export class PrismEngine {
     if (this.ctx.state === 'suspended') await this.ctx.resume();
 
     this.setState('loading');
-    await this.layers!.loadStems(manifestFor(mode));
+    // Only the pad + texture are awaited; the one-shots stream in behind them
+    // so play starts in about a second rather than after the whole 16 MB.
+    await this.layers!.loadEssential(this.params, manifestFor(mode));
+    this.layers!.loadRest(manifestFor(mode));
 
     this.dsp!.updateParams(this.params);
     this.layers!.start(this.params);

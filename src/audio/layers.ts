@@ -29,12 +29,20 @@ export class StemLayerManager {
   private readonly ctx: AudioContext;
   private readonly dsp: DspChain;
   private readonly buffers = new Map<string, AudioBuffer>();
+  /** De-duplicates concurrent fetches of the same stem. */
+  private readonly loading = new Map<string, Promise<void>>();
+  /** The pad/texture chosen by `loadEssential`, so `start` reuses them. */
+  private primed: { pad?: Stem; texture?: Stem } = {};
+  /** In-flight pad fetch, so `start` can bring it in late. */
+  private padPending: Promise<void> | null = null;
   private manifest: SoundManifest;
 
   private pad: Loop | null = null;
   private texture: Loop | null = null;
   private sparks: AudioBufferSourceNode[] = [];
   private lastSparkAt = 0;
+  /** Bumped on every stop, so a late pad cannot start after the session ends. */
+  private generation = 0;
 
   constructor(ctx: AudioContext, dsp: DspChain, manifest: SoundManifest) {
     this.ctx = ctx;
@@ -42,16 +50,45 @@ export class StemLayerManager {
     this.manifest = manifest;
   }
 
+  private load(s: Stem): Promise<void> {
+    if (this.buffers.has(s.path)) return Promise.resolve();
+    const inFlight = this.loading.get(s.path);
+    if (inFlight) return inFlight;
+    const job = (async () => {
+      const res = await fetch(stemUrl(s));
+      if (!res.ok) throw new Error(`Could not load ${s.path} (${res.status})`);
+      this.buffers.set(s.path, await this.ctx.decodeAudioData(await res.arrayBuffer()));
+    })().finally(() => this.loading.delete(s.path));
+    this.loading.set(s.path, job);
+    return job;
+  }
+
+  /**
+   * Load only what is needed to make the *first* sound: the texture.
+   *
+   * The pads dominate the payload — even re-encoded, the slow F# pad is 4.4 MB
+   * against a 180–360 KB texture — so waiting on one meant ten seconds of
+   * silence after pressing play. The texture alone is a complete ambience, so
+   * it starts immediately and the pad fades in underneath it when it arrives.
+   * One-shots are tiny and not needed until the first beat.
+   */
+  async loadEssential(params: SoundscapeParams, manifest = this.manifest): Promise<void> {
+    const pad = pick(manifest.pads);
+    const texture = this.pickTextureFrom(manifest, params);
+    this.primed = { pad, texture };
+    // Kick the pad off now but do not block on it.
+    this.padPending = pad ? this.load(pad).catch(() => undefined) : null;
+    if (texture) await this.load(texture);
+  }
+
+  /** Everything else, in the background. Failures here are not fatal. */
+  loadRest(manifest = this.manifest): void {
+    for (const s of allStems(manifest)) void this.load(s).catch(() => undefined);
+  }
+
   /** Fetch + decode everything this manifest needs that isn't cached. */
   async loadStems(manifest = this.manifest): Promise<void> {
-    await Promise.all(
-      allStems(manifest).map(async (s) => {
-        if (this.buffers.has(s.path)) return;
-        const res = await fetch(stemUrl(s));
-        if (!res.ok) throw new Error(`Could not load ${s.path} (${res.status})`);
-        this.buffers.set(s.path, await this.ctx.decodeAudioData(await res.arrayBuffer()));
-      }),
-    );
+    await Promise.all(allStems(manifest).map((s) => this.load(s)));
   }
 
   /** True once every stem of the current manifest is decoded. */
@@ -61,26 +98,40 @@ export class StemLayerManager {
 
   /** Starts the always-on layers, fading in over 5 s. */
   start(params: SoundscapeParams): void {
-    this.startPad(START_FADE);
     this.startTexture(params, START_FADE);
+    const padStem = this.primed.pad;
+    if (padStem && !this.buffers.has(padStem.path) && this.padPending) {
+      // Still downloading — join it when it lands, unless the session ended
+      // in the meantime.
+      const generation = ++this.generation;
+      void this.padPending.then(() => {
+        if (this.generation === generation && !this.pad) this.startPad(START_FADE);
+      });
+      return;
+    }
+    this.startPad(START_FADE);
   }
 
   private startPad(fade: number): void {
-    const stem = pick(this.manifest.pads);
+    const stem = this.primed.pad ?? pick(this.manifest.pads);
     if (!stem) return;
     this.pad = this.startLoop(stem, PAD_VOLUME, fade);
   }
 
   private startTexture(params: SoundscapeParams, fade: number): void {
-    const stem = this.pickTexture(params);
+    const stem = this.primed.texture ?? this.pickTexture(params);
     if (!stem) return;
     this.texture = this.startLoop(stem, this.textureTarget(params), fade);
   }
 
   /** Noise colour comes from the stem's `note`, never from its filename. */
   private pickTexture(params: SoundscapeParams): Stem | undefined {
+    return this.pickTextureFrom(this.manifest, params);
+  }
+
+  private pickTextureFrom(manifest: SoundManifest, params: SoundscapeParams): Stem | undefined {
     const want = params.textureBrownNoise ? 'brown' : 'pink';
-    return this.manifest.textures.find((s) => s.note === want) ?? this.manifest.textures[0];
+    return manifest.textures.find((s) => s.note === want) ?? manifest.textures[0];
   }
 
   private textureTarget = (p: SoundscapeParams) => clamp(dbToLinear(p.textureVolumeDb), 0, 1);
@@ -175,7 +226,8 @@ export class StemLayerManager {
   /** Crossfade to another mode's stems over 10 s (§8.6). */
   async switchManifest(mode: Parameters<typeof manifestFor>[0], params: SoundscapeParams): Promise<void> {
     const next = manifestFor(mode);
-    await this.loadStems(next);
+    await this.loadEssential(params, next);
+    this.loadRest(next);
     const oldPad = this.pad;
     const oldTexture = this.texture;
     this.manifest = next;
@@ -208,6 +260,7 @@ export class StemLayerManager {
 
   /** 3 s fade, then stop everything. */
   stop(): void {
+    this.generation += 1;
     const loops = [this.pad, this.texture];
     this.pad = null;
     this.texture = null;

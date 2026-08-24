@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import IceTimer from '../../components/brand/IceTimer';
@@ -23,6 +23,7 @@ import {
 } from '../../hooks/data';
 import { useFocusTimer } from '../../hooks/useFocusTimer';
 import { useAppState } from '../../hooks/useAppState';
+import { usePrismAudio, prismVolume } from '../../hooks/usePrismAudio';
 import { todayIso } from '../../lib/format';
 import { splitOccurrenceId } from '../../lib/mappers';
 import type { PrismModeDto } from '../../lib/api';
@@ -54,17 +55,6 @@ function prismColor(modes: PrismModeDto[], key: string): string {
   return SWATCHES[(i < 0 ? 0 : i) % SWATCHES.length];
 }
 
-/** Prism streams are HLS; only play where the browser handles that natively. */
-let nativeHls: boolean | null = null;
-function playable(url: string | null): url is string {
-  if (!url) return false;
-  if (!/\.m3u8(\?|$)/i.test(url)) return true;
-  if (nativeHls === null) {
-    nativeHls = document.createElement('audio').canPlayType('application/vnd.apple.mpegurl') !== '';
-  }
-  return nativeHls;
-}
-
 export default function Focus() {
   const navigate = useNavigate();
   const { guest } = useAppState();
@@ -94,7 +84,6 @@ export default function Focus() {
 
   const sessionId = useRef<string | null>(null);
   const opening = useRef<Promise<string | null> | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const modes = useMemo(() => modesQuery.data ?? [], [modesQuery.data]);
   const fallbackMode = modes.find((m) => m.key !== 'none') ?? modes[0] ?? SILENCE;
@@ -188,22 +177,19 @@ export default function Focus() {
     onComplete: (elapsedSec) => void finish(elapsedSec, sessionMood ?? undefined),
   });
 
-  /* Prism playback. Modes whose stream is still null stay selectable — they
-     are stored on the session — they just have nothing to play. */
-  const streamUrl = playable(mode.url) ? mode.url : null;
-  const volume = Math.min(1, Math.max(0, (prefs.data?.volume_level ?? 50) / 100));
+  /* Prism playback.
 
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (!streamUrl || !autoplay || timer.status !== 'running') {
-      el.pause();
-      return;
-    }
-    el.volume = volume;
-    // Autoplay policies can refuse this; the session is unaffected either way.
-    void el.play().catch(() => undefined);
-  }, [streamUrl, autoplay, volume, timer.status]);
+     The served catalogue has never carried a stream — every `url` is null, so
+     the <audio> element here could only ever pause. Sound now comes from the
+     local generative engine, which builds the soundscape from the stems in
+     storage; `mode.key` selects which preset it renders. */
+  const volume = prismVolume(prefs.data?.volume_level);
+  usePrismAudio({
+    modeKey: mode.key,
+    status: timer.status,
+    enabled: autoplay,
+    volume,
+  });
 
   const restart = () => {
     sessionId.current = null;
@@ -560,7 +546,6 @@ export default function Focus() {
         )}
 
         {/* Prism stream — not rendered by the browser, no `controls`. */}
-        <audio ref={audioRef} src={streamUrl ?? undefined} loop preload="none" />
       </main>
 
       {/* ── 04.2 Prism mode picker ─────────────────────────────────── */}
