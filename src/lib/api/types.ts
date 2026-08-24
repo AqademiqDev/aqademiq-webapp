@@ -291,6 +291,56 @@ export interface AdaAttachmentDto {
   mime_type?: string | null;
 }
 
+/* ── Ada proposed changes ──────────────────────────────────────────────
+   The agent never writes directly: every create/update/delete is parked as a
+   pending action and applied only once the user approves it. The rows live in
+   `ada_pending_actions` and ride inline on the message that proposed them. */
+
+/** Wire values of `ada_pending_actions.status`. */
+export type AdaActionStatus =
+  | 'pending'
+  | 'approved'
+  | 'executed'
+  | 'rejected'
+  | 'failed'
+  | 'superseded';
+
+export type AdaActionOperation = 'create' | 'update' | 'delete';
+
+/** One before/after line on the card. `from` is absent when setting a value. */
+export interface AdaActionFieldDto {
+  label: string;
+  from?: string | null;
+  to?: string | null;
+}
+
+export interface AdaActionDto {
+  id: string;
+  operation: AdaActionOperation;
+  /** `task` | `subject` | `semester` | `study_tag` | `mood` | `profile` | `settings`. */
+  resource: string;
+  title: string;
+  fields?: AdaActionFieldDto[] | null;
+  /** Shown in warning tone — destructive changes explain themselves here. */
+  warning?: string | null;
+  status?: AdaActionStatus | null;
+  error?: string | null;
+  message_id?: string | null;
+}
+
+/** A single approve/reject. The server may answer with a follow-up message. */
+export interface AdaDecisionDto {
+  action: AdaActionDto;
+  message?: AdaMessageDto | null;
+  error?: string | null;
+}
+
+/** Approve-all / reject-all across the conversation. */
+export interface AdaBulkDecisionDto {
+  actions: AdaActionDto[];
+  messages: AdaMessageDto[];
+}
+
 export interface AdaMessageDto {
   id: string;
   is_user: boolean;
@@ -298,6 +348,8 @@ export interface AdaMessageDto {
   plan: AdaPlanDayDto[] | null;
   plan_footer: string | null;
   attachments: AdaAttachmentDto[] | null;
+  /** Changes this turn is asking permission to make. */
+  actions?: AdaActionDto[] | null;
   created_at: string;
 }
 

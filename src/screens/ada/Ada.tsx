@@ -18,10 +18,18 @@ import {
   useMessages,
   useSendMessage,
   useSubjects,
+  useDecideAdaAction,
+  useDecideAllAdaActions,
 } from '../../hooks/data';
 import { useAuth } from '../../hooks/useAuth';
 import { ApiError } from '../../lib/api';
-import type { AdaMessageDto, SubjectDto } from '../../lib/api';
+import type {
+  AdaActionDto,
+  AdaActionOperation,
+  AdaActionStatus,
+  AdaMessageDto,
+  SubjectDto,
+} from '../../lib/api';
 import { agendaLabel, durationLabel, formatClock, formatHhMm, relativeLabel } from '../../lib/format';
 import { buildSubjectLookup, subjectLabel } from '../../lib/mappers';
 
@@ -44,7 +52,7 @@ interface PlanDay {
 }
 
 /** A rendered turn — the drawn `ChatMessage` plus the plan grouped by day. */
-type AdaTurn = ChatMessage & { planDays?: PlanDay[] };
+type AdaTurn = ChatMessage & { planDays?: PlanDay[]; actions?: AdaActionDto[] };
 
 interface ApplyFailure {
   id: string;
@@ -96,6 +104,7 @@ function toTurns(messages: AdaMessageDto[], subjects: SubjectDto[]): AdaTurn[] {
       planFooter: m.plan_footer ?? undefined,
       hasPlan: planDays.length > 0,
       planDays: planDays.length ? planDays : undefined,
+      actions: m.actions?.length ? m.actions : undefined,
     };
   });
 }
@@ -124,6 +133,11 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
   const createConversation = useCreateConversation();
   const sendMessage = useSendMessage();
   const applyPlan = useApplyPlan();
+  /* Ada's proposals. `decide` carries the conversation so a decision can patch
+     the cached thread — and drop in any follow-up message the server returns —
+     without refetching the whole chat. */
+  const decide = useDecideAdaAction(activeId);
+  const decideAll = useDecideAllAdaActions(activeId);
   const archiveConversation = useArchiveConversation();
   const clearChats = useClearChats();
 
@@ -132,6 +146,16 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
   const thread = useMemo(
     () => toTurns(messagesQuery.data ?? [], subjects.data ?? []),
     [messagesQuery.data, subjects.data],
+  );
+
+  /** Every proposal still awaiting a decision, across the whole conversation. */
+  const outstanding = useMemo(
+    () =>
+      thread.reduce(
+        (n, m) => n + (m.actions ?? []).filter((a) => (a.status ?? 'pending') === 'pending').length,
+        0,
+      ),
+    [thread],
   );
 
   const sending = createConversation.isPending || sendMessage.isPending;
@@ -231,16 +255,39 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
     }
   }
 
+  const deciding = decide.isPending || decideAll.isPending;
   const renderBubble = (m: AdaTurn) => (
-    <Bubble
-      key={m.id}
-      message={m}
-      applying={applyPlan.isPending && applyPlan.variables?.messageId === m.id}
-      applyDisabled={applyPlan.isPending}
-      appliedCount={applied[m.id]}
-      failure={applyError?.id === m.id ? applyError : undefined}
-      onApply={() => void runApplyPlan(m.id)}
-    />
+    <div key={m.id}>
+      <Bubble
+        message={m}
+        applying={applyPlan.isPending && applyPlan.variables?.messageId === m.id}
+        applyDisabled={applyPlan.isPending}
+        appliedCount={applied[m.id]}
+        failure={applyError?.id === m.id ? applyError : undefined}
+        onApply={() => void runApplyPlan(m.id)}
+      />
+      {!!m.actions?.length && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            margin: '2px 0 14px',
+            maxWidth: 520,
+          }}
+        >
+          {m.actions.map((a) => (
+            <ActionCard
+              key={a.id}
+              action={a}
+              busy={decide.isPending && decide.variables?.actionId === a.id}
+              disabled={deciding}
+              onDecide={(approve) => decide.mutate({ actionId: a.id, approve })}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 
   const threadView = (
@@ -266,6 +313,60 @@ export default function Ada({ historyOpen = false }: { historyOpen?: boolean }) 
         {thread.map(renderBubble)}
         {pendingText !== null && <Bubble message={{ id: '__pending', from: 'user', text: pendingText }} />}
         {sending && <Thinking />}
+
+        {/* Mobile offers a single decision for everything still outstanding —
+            a week's plan can propose a dozen changes and tapping each one is
+            the wrong amount of work. */}
+        {outstanding > 1 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+              background: 'var(--surface-page)',
+              border: '1.5px solid var(--border-hairline)',
+              borderRadius: 14,
+              padding: '11px 14px',
+              maxWidth: 520,
+              marginBottom: 14,
+            }}
+          >
+            <span style={{ font: '700 11.5px var(--font-sans)', color: 'var(--text-secondary)', flex: 1 }}>
+              {outstanding} changes waiting on you
+            </span>
+            <Button
+              variant="smallInk"
+              loading={decideAll.isPending && decideAll.variables === true}
+              disabled={deciding}
+              onClick={() => decideAll.mutate(true)}
+              style={{ padding: '7px 16px', font: '800 11px var(--font-sans)' }}
+            >
+              Approve all
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={deciding}
+              onClick={() => decideAll.mutate(false)}
+              style={{ padding: '7px 14px', height: 32, font: '800 11px var(--font-sans)' }}
+            >
+              Decline all
+            </Button>
+          </div>
+        )}
+
+        {(decide.isError || decideAll.isError) && (
+          <div
+            role="alert"
+            style={{
+              font: '700 11px var(--font-sans)',
+              color: 'var(--aq-danger)',
+              marginBottom: 12,
+            }}
+          >
+            {errorMessage(decide.error ?? decideAll.error)}
+          </div>
+        )}
       </AsyncSection>
       <div ref={endRef} />
     </>
@@ -930,6 +1031,153 @@ function Composer({
           }}
         >
           {note.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Ada's proposed changes ────────────────────────────────────────────
+
+   The agent never writes directly — the backend parks every create/update/
+   delete in `ada_pending_actions` and applies nothing until the user approves
+   it. Mobile has shown these cards since launch; the web rendered the reply
+   text and silently dropped the proposals, so anything Ada offered to do could
+   only be accepted from a phone. */
+
+const OP_STYLE: Record<AdaActionOperation, { label: string; color: string; tint: string }> = {
+  create: { label: 'Add', color: 'var(--aq-success)', tint: '#2a9d6b1c' },
+  update: { label: 'Change', color: 'var(--accent)', tint: 'var(--accent-soft)' },
+  delete: { label: 'Delete', color: 'var(--aq-danger)', tint: '#e854761c' },
+};
+
+const STATUS_COPY: Partial<Record<AdaActionStatus, { label: string; color: string }>> = {
+  approved: { label: 'Approved', color: 'var(--text-secondary)' },
+  executed: { label: 'Applied', color: 'var(--aq-success)' },
+  rejected: { label: 'Declined', color: 'var(--text-dim)' },
+  failed: { label: 'Failed', color: 'var(--aq-danger)' },
+  superseded: { label: 'Superseded', color: 'var(--text-dim)' },
+};
+
+function ActionCard({
+  action,
+  busy,
+  disabled,
+  onDecide,
+}: {
+  action: AdaActionDto;
+  busy: boolean;
+  disabled: boolean;
+  onDecide: (approve: boolean) => void;
+}) {
+  /* The Dart model defaults every one of these rather than throwing, and this
+     renders rows written by the agent — so a proposal missing a title or an
+     unrecognised operation must degrade, not blank the chat. */
+  const op = OP_STYLE[action.operation] ?? OP_STYLE.update;
+  const resource = (action.resource || '').replace(/_/g, ' ').trim();
+  const title = action.title?.trim() || 'Change';
+  const status = action.status ?? 'pending';
+  const pending = status === 'pending';
+  const decided = STATUS_COPY[status];
+
+  return (
+    <div
+      style={{
+        background: 'var(--surface-card)',
+        border: `1.5px solid ${pending ? op.color + '55' : 'var(--border-hairline)'}`,
+        borderRadius: 14,
+        padding: '12px 14px',
+        opacity: status === 'rejected' || status === 'superseded' ? 0.6 : 1,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span
+          style={{
+            font: '800 9px var(--font-sans)',
+            letterSpacing: '.08em',
+            color: op.color,
+            background: op.tint,
+            borderRadius: 6,
+            padding: '3px 7px',
+            textTransform: 'uppercase',
+          }}
+        >
+          {op.label}{resource ? ` ${resource}` : ''}
+        </span>
+        {decided && (
+          <span style={{ font: '700 10px var(--font-sans)', color: decided.color, marginLeft: 'auto' }}>
+            {decided.label}
+          </span>
+        )}
+      </div>
+
+      <div style={{ font: '800 13px var(--font-sans)', marginBottom: action.fields?.length ? 8 : 0 }}>
+        {title}
+      </div>
+
+      {!!action.fields?.length && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 2 }}>
+          {action.fields.map((f, i) => (
+            <div
+              key={`${f.label}-${i}`}
+              style={{ font: '600 11px/1.5 var(--font-sans)', color: 'var(--text-secondary)' }}
+            >
+              <span style={{ color: 'var(--text-dim)' }}>{f.label}: </span>
+              {/* `from` is only present when something is being replaced. */}
+              {f.from ? (
+                <>
+                  <span style={{ textDecoration: 'line-through', color: 'var(--text-dim)' }}>{f.from}</span>
+                  {' → '}
+                  <span style={{ color: 'var(--text-primary)' }}>{f.to}</span>
+                </>
+              ) : (
+                <span style={{ color: 'var(--text-primary)' }}>{f.to}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {action.warning && (
+        <div
+          style={{
+            font: '700 10.5px/1.5 var(--font-sans)',
+            color: 'var(--aq-danger)',
+            marginTop: 8,
+          }}
+        >
+          {action.warning}
+        </div>
+      )}
+
+      {action.error && (
+        <div
+          role="alert"
+          style={{ font: '600 10.5px/1.5 var(--font-sans)', color: 'var(--aq-danger)', marginTop: 8 }}
+        >
+          {action.error}
+        </div>
+      )}
+
+      {pending && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <Button
+            variant="smallInk"
+            loading={busy}
+            disabled={disabled}
+            onClick={() => onDecide(true)}
+            style={{ padding: '7px 16px', font: '800 11px var(--font-sans)' }}
+          >
+            Approve
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={disabled || busy}
+            onClick={() => onDecide(false)}
+            style={{ padding: '7px 14px', height: 32, font: '800 11px var(--font-sans)' }}
+          >
+            Decline
+          </Button>
         </div>
       )}
     </div>

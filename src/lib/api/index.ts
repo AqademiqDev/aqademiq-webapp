@@ -2,6 +2,8 @@ import { api, stripUndefined } from './http';
 import type {
   AdaConversationDto,
   AdaMessageDto,
+  AdaDecisionDto,
+  AdaBulkDecisionDto,
   BoardCommentDto,
   BoardMetaDto,
   BoardPostDto,
@@ -251,6 +253,16 @@ export async function uploadAdaAttachment(conversationId: string, file: File) {
 export const archiveConversation = (id: string) =>
   api.post<{ status: string; id: string }>(`/ada/conversations/${id}/archive`);
 export const clearChats = () => api.post<{ status: string }>('/ada/chat/clear');
+
+/* Ada's proposed changes. Nothing the agent suggests touches the user's data
+   until one of these is called. */
+export const approveAdaAction = (actionId: string) =>
+  api.post<AdaDecisionDto>(`/ada/actions/${actionId}/approve`);
+export const rejectAdaAction = (actionId: string) =>
+  api.post<AdaDecisionDto>(`/ada/actions/${actionId}/reject`);
+/** Approve or reject everything still outstanding in one conversation. */
+export const decideAllAdaActions = (conversationId: string, approve: boolean) =>
+  api.post<AdaBulkDecisionDto>(`/ada/conversations/${conversationId}/actions/decide`, { approve });
 
 /* ── Feedback board ─────────────────────────────────────────────────── */
 

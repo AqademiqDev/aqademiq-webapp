@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import * as apiFns from '../../lib/api';
+import type { AdaActionDto, AdaMessageDto } from '../../lib/api';
 import { invalidatePlan, qk } from '../../lib/queryClient';
 import { useAuth } from '../useAuth';
 
@@ -90,6 +91,70 @@ export function useUploadAdaAttachment() {
   return useMutation({
     mutationFn: ({ conversationId, file }: { conversationId: string; file: File }) =>
       apiFns.uploadAdaAttachment(conversationId, file),
+  });
+}
+
+/* ── Proposed changes ──────────────────────────────────────────────────
+
+   Ada only ever proposes; the backend parks each create/update/delete as a
+   pending action and applies nothing until one of these runs. A decision can
+   come back with a follow-up assistant message ("done — moved to Thursday"),
+   so the thread is patched in place rather than refetched.
+
+   `invalidatePlan()` runs on approval because an executed action is a real
+   write to tasks/subjects/terms. */
+
+/** Patch one action inside the cached thread, leaving everything else alone. */
+function patchAction(
+  client: ReturnType<typeof useQueryClient>,
+  conversationId: string,
+  action: AdaActionDto,
+  followUp?: AdaMessageDto | null,
+) {
+  client.setQueryData(qk.messages(conversationId), (old: unknown) => {
+    if (!Array.isArray(old)) return old;
+    const messages = (old as AdaMessageDto[]).map((m) =>
+      m.actions?.some((a) => a.id === action.id)
+        ? { ...m, actions: m.actions.map((a) => (a.id === action.id ? action : a)) }
+        : m,
+    );
+    return followUp ? [...messages, followUp] : messages;
+  });
+}
+
+export function useDecideAdaAction(conversationId: string | undefined) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ actionId, approve }: { actionId: string; approve: boolean }) =>
+      approve ? apiFns.approveAdaAction(actionId) : apiFns.rejectAdaAction(actionId),
+    onSuccess: (res, vars) => {
+      if (conversationId) patchAction(client, conversationId, res.action, res.message);
+      if (vars.approve) invalidatePlan();
+    },
+  });
+}
+
+/** Approve or reject every outstanding action in the conversation at once. */
+export function useDecideAllAdaActions(conversationId: string | undefined) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (approve: boolean) =>
+      apiFns.decideAllAdaActions(conversationId as string, approve),
+    onSuccess: (res, approve) => {
+      if (conversationId) {
+        const decided = new Map(res.actions.map((a) => [a.id, a]));
+        client.setQueryData(qk.messages(conversationId), (old: unknown) => {
+          if (!Array.isArray(old)) return old;
+          const messages = (old as AdaMessageDto[]).map((m) =>
+            m.actions?.length
+              ? { ...m, actions: m.actions.map((a) => decided.get(a.id) ?? a) }
+              : m,
+          );
+          return res.messages.length ? [...messages, ...res.messages] : messages;
+        });
+      }
+      if (approve) invalidatePlan();
+    },
   });
 }
 
