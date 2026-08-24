@@ -173,3 +173,39 @@ export function useClearChats() {
     onSuccess: () => client.invalidateQueries({ queryKey: ['ada'] }),
   });
 }
+
+/* ── What Ada remembers ────────────────────────────────────────────────
+
+   Ada can recall and forget on its own, but that isn't enough: things held
+   about a person should be inspectable and removable by them directly, not
+   only by asking the assistant that wrote them. Read + delete only — there is
+   deliberately no create.
+
+   A delete re-reads rather than filtering locally, because the server is the
+   authority and a delete racing the agent writing a new memory should settle
+   on whatever is actually stored. */
+
+export function useAdaMemories() {
+  const { status } = useAuth();
+  return useQuery({
+    queryKey: qk.adaMemories,
+    enabled: status === 'signed-in',
+    queryFn: async () => (await apiFns.listAdaMemories()).memories,
+  });
+}
+
+export function useDeleteAdaMemory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFns.deleteAdaMemory(id),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.adaMemories }),
+  });
+}
+
+export function useClearAdaMemories() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: apiFns.clearAdaMemories,
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.adaMemories }),
+  });
+}

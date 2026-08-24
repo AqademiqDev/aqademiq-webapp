@@ -58,6 +58,7 @@ export const qk = {
 
   conversations: ['ada', 'conversations'] as const,
   messages: (id: string) => ['ada', 'messages', id] as const,
+  adaMemories: ['ada', 'memories'] as const,
 
   boardMeta: ['board', 'meta'] as const,
   boardPosts: (filters: string) => ['board', 'posts', filters] as const,

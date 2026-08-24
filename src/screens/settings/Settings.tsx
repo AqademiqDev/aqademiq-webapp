@@ -14,6 +14,7 @@ const CATEGORIES = [
   { to: '/settings/notifications', icon: 'notifications_none', label: 'Notifications' },
   { to: '/settings/prism', icon: 'graphic_eq', label: 'Prism' },
   { to: '/settings/import', icon: 'ios_share', label: 'Import' },
+  { to: '/settings/memories', icon: 'auto_awesome', label: 'What Ada remembers' },
   { to: '/settings/account', icon: 'shield', label: 'Profile & Account' },
 ];
 

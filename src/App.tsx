@@ -27,6 +27,7 @@ import StudyTags from './screens/settings/panels/StudyTags';
 import Notifications from './screens/settings/panels/Notifications';
 import Prism from './screens/settings/panels/Prism';
 import ImportPanel from './screens/settings/panels/Import';
+import Memories from './screens/settings/panels/Memories';
 import Account from './screens/settings/panels/Account';
 
 import DevComponents from './dev/DevComponents';
@@ -129,6 +130,7 @@ export default function App() {
           <Route path="notifications" element={<Notifications />} />
           <Route path="prism" element={<Prism />} />
           <Route path="import" element={<ImportPanel />} />
+          <Route path="memories" element={<Memories />} />
           <Route path="account" element={<Account />} />
         </Route>
       </Route>

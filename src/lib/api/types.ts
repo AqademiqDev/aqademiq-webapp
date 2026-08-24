@@ -341,6 +341,30 @@ export interface AdaBulkDecisionDto {
   messages: AdaMessageDto[];
 }
 
+/* ── What Ada remembers ────────────────────────────────────────────────
+   Carried into every conversation so the user needn't repeat themselves.
+   Read and delete only — the agent writes these while it works, the client
+   never creates them. Contract §12.P. */
+
+export type AdaMemoryKind = 'preference' | 'constraint' | 'pattern' | 'goal' | 'fact';
+
+/** `ada` means it was inferred from behaviour rather than volunteered. */
+export type AdaMemoryOrigin = 'user' | 'ada';
+
+export interface AdaMemoryDto {
+  id: string;
+  kind: AdaMemoryKind;
+  content: string;
+  source: AdaMemoryOrigin;
+  /** 1–5. Inferences start lower and climb as Ada sees the same thing again. */
+  confidence?: number | null;
+  /** Set when the memory applies to one subject rather than broadly. */
+  subject_id?: string | null;
+  /** Set when it stops being true after a known date. */
+  expires_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface AdaMessageDto {
   id: string;
   is_user: boolean;

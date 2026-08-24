@@ -2,6 +2,7 @@ import { api, stripUndefined } from './http';
 import type {
   AdaConversationDto,
   AdaMessageDto,
+  AdaMemoryDto,
   AdaDecisionDto,
   AdaBulkDecisionDto,
   BoardCommentDto,
@@ -253,6 +254,14 @@ export async function uploadAdaAttachment(conversationId: string, file: File) {
 export const archiveConversation = (id: string) =>
   api.post<{ status: string; id: string }>(`/ada/conversations/${id}/archive`);
 export const clearChats = () => api.post<{ status: string }>('/ada/chat/clear');
+
+/* What Ada remembers. No create: the agent writes these itself — the client's
+   job is to make what is stored visible and removable. */
+export const listAdaMemories = () => api.get<{ memories: AdaMemoryDto[] }>('/ada/memories');
+export const deleteAdaMemory = (id: string) =>
+  api.del<{ status: string }>(`/ada/memories/${id}`);
+export const clearAdaMemories = () =>
+  api.del<{ status: string; deleted: number }>('/ada/memories');
 
 /* Ada's proposed changes. Nothing the agent suggests touches the user's data
    until one of these is called. */
