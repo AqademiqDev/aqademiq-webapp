@@ -38,9 +38,10 @@ subjects, feedback board, settings, guest mode and a full dark theme.
 | `/subjects` `/subjects/:id` `/subjects/semesters` | Master-detail subjects |
 | `/focus` | Focus timer — setup, running, frozen, done |
 | `/ada` `/ada/:chatId` | Ada chat and history |
-| `/profile` | Streaks, mood, invite hero |
+| `/profile` | Streaks, mood, invite hero, the entry to The Core |
+| `/report/week` | The Core — the weekly report, as a story of beats (current week only) |
 | `/feedback` `?view=board` `/feedback/:id` | Suggestions list, board, detail |
-| `/settings` `/tags` `/notifications` `/prism` `/account` | Five settings panels |
+| `/settings` `/tags` `/notifications` `/prism` `/account` `/report` | Settings panels, including the weekly report's off switch |
 
 Modals, sheets and popovers are local UI state, not routes.
 
@@ -107,3 +108,9 @@ svg { flex-shrink: 0; vertical-align: middle; }
   mark — Google's official asset was never supplied. See `BUILD_NOTES.md`.
 - `BUILD_NOTES.md` describes the original front-end-only build; its §6 ("what is
   deliberately not built") is superseded by `INTEGRATION.md`.
+- **The Core** (`src/screens/report`) is a port of the mobile app's weekly report
+  and must say the same things about the same week. Its copy lives in one file,
+  `reportCopy.ts`, and must never grade a week — no targets, shortfalls or
+  `x/y` denominators. `npm run check:report-copy` enforces that; run it after
+  touching anything in the report. `/dev/components` renders every beat and
+  band state from a mid-week fixture.

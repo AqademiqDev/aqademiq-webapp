@@ -410,6 +410,178 @@
   animation: aqFadeUp 0.34s ease both;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   THE CORE — the weekly report's ice column (components/content/CoreColumn)
+
+   Colours and alphas are the mobile app's `core_column.dart`, value for value.
+   Theme-dependent ones are custom properties here so the drawing follows the
+   theme without a re-render; the mood tints of individual bands are data, and
+   arrive inline as --band-fill / --band-edge.
+   ══════════════════════════════════════════════════════════════════════ */
+
+.aq-core {
+  /* The glass: a whisper of the accent in light, a pale tube in dark. Visible
+     even where no band is filled, so an empty week still reads as a core that
+     was drilled rather than a screen that failed to load. */
+  --core-glass-body: color-mix(in srgb, var(--accent) 4.5%, transparent);
+  --core-glass-edge: color-mix(in srgb, var(--accent) 20%, transparent);
+  --core-glow: color-mix(in srgb, var(--accent) 14%, transparent);
+  /* Decorative strokes keep the mobile greys. The web's --text-dim was darkened
+     for text contrast, which would make an open band look heavier than a filled one. */
+  --core-dash: #c0c0c0;
+  --core-future: rgba(192, 192, 192, 0.05);
+  --core-sheen-hi: rgba(255, 255, 255, 0.55);
+  --core-sheen-lo: rgba(0, 0, 0, 0.05);
+  --core-bubble-a: rgba(255, 255, 255, 0.95);
+  --core-bubble-b: rgba(255, 255, 255, 0.7);
+}
+
+[data-theme='dark'] .aq-core {
+  --core-glass-body: rgba(255, 255, 255, 0.1);
+  --core-glass-edge: rgba(255, 255, 255, 0.72);
+  --core-glow: color-mix(in srgb, var(--accent) 22%, transparent);
+  --core-dash: rgba(255, 255, 255, 0.42);
+  --core-future: rgba(255, 255, 255, 0.05);
+  --core-sheen-hi: rgba(255, 255, 255, 0.3);
+  --core-sheen-lo: rgba(0, 0, 0, 0.16);
+  --core-bubble-a: rgba(255, 255, 255, 0.85);
+  --core-bubble-b: rgba(255, 255, 255, 0.55);
+}
+
+.aq-core-tube {
+  background: var(--core-glass-body);
+  border-color: var(--core-glass-edge);
+  box-shadow: 0 0 24px 1px var(--core-glow);
+}
+
+.aq-core-rim {
+  fill: var(--core-glass-body);
+  stroke: var(--core-glass-edge);
+}
+
+.aq-core-sheen {
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.02) 4%,
+    var(--core-sheen-hi) 13%,
+    rgba(255, 255, 255, 0.03) 26%,
+    transparent 66%,
+    var(--core-sheen-lo) 100%
+  );
+}
+
+/* An open band: outlined, never filled. */
+.aq-core-dash {
+  stroke: var(--core-dash);
+}
+
+/* A day that has not happened: bare, undashed, half-there. */
+.aq-core-future {
+  background: var(--core-future);
+  opacity: 0.5;
+}
+
+.aq-core-fill {
+  background: var(--band-fill);
+  border-color: var(--band-edge);
+}
+[data-theme='dark'] .aq-core-fill {
+  background: var(--band-fill-dark);
+  border-color: var(--band-edge-dark);
+}
+
+/* Worked, but no mood logged: the accent at the mobile app's neutral alphas
+   (base .26 light / .34 dark, then ×.34 / ×.62 for the fill and ×.85 for the edge). */
+.aq-core-fill-untinted {
+  --band-fill: color-mix(in srgb, var(--accent) 8.84%, transparent);
+  --band-edge: color-mix(in srgb, var(--accent) 22.1%, transparent);
+  --band-fill-dark: color-mix(in srgb, var(--accent) 21.08%, transparent);
+  --band-edge-dark: color-mix(in srgb, var(--accent) 28.9%, transparent);
+}
+
+.aq-core-bubble {
+  position: absolute;
+  border-radius: 50%;
+}
+.aq-core-bubble-a {
+  background: var(--core-bubble-a);
+}
+.aq-core-bubble-b {
+  background: var(--core-bubble-b);
+}
+
+/* The freeze-in: 1250ms. The column forms over its first 35%, then the layers
+   settle top-down, each over 30% of the run — easeOutCubic throughout. */
+@keyframes aqCoreForm {
+  from {
+    opacity: 0;
+    transform: scaleY(0.78);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes aqCoreBandIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes aqCoreBandDrop {
+  from {
+    transform: translateY(-8px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.aq-core-form {
+  transform-origin: 50% 0;
+  animation: aqCoreForm 437ms cubic-bezier(0.33, 1, 0.68, 1) both;
+}
+.aq-core-band {
+  animation: aqCoreBandIn 375ms cubic-bezier(0.33, 1, 0.68, 1) both;
+  animation-delay: var(--band-delay, 0ms);
+}
+.aq-core-drop {
+  animation: aqCoreBandDrop 375ms cubic-bezier(0.33, 1, 0.68, 1) both;
+  animation-delay: var(--drop-delay, 0ms);
+}
+/* Held on its first frame until the beat holding it is reached. */
+.aq-core-paused,
+.aq-core-paused * {
+  animation-play-state: paused !important;
+}
+
+/* The report's pager. One beat per screenful, snapped — so a trackpad or touch
+   swipe moves exactly one beat, the way the phone's pager does. */
+.aq-story-track {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.aq-story-track::-webkit-scrollbar {
+  display: none;
+}
+.aq-story-beat {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.aq-story-beat::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .aq-drip {
     display: none !important;

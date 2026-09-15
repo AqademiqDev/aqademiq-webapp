@@ -67,6 +67,8 @@ const invalidateMood = () => {
   void queryClient.invalidateQueries({ queryKey: qk.stats });
   void queryClient.invalidateQueries({ queryKey: qk.activityDates });
   void queryClient.invalidateQueries({ queryKey: ['week-count'] });
+  // A logged mood is what tints a band of the week's core.
+  void queryClient.invalidateQueries({ queryKey: qk.weeklyReport });
 };
 
 export function useLogMood() {

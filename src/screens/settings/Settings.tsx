@@ -15,6 +15,9 @@ const CATEGORIES = [
   { to: '/settings/prism', icon: 'graphic_eq', label: 'Prism' },
   { to: '/settings/import', icon: 'ios_share', label: 'Import' },
   { to: '/settings/memories', icon: 'auto_awesome', label: 'What Ada remembers' },
+  // Its own panel rather than a bare toggle: the off switch ships with the three
+  // promises that make leaving it on safe, and those need somewhere to be read.
+  { to: '/settings/report', icon: 'view_week', label: 'Weekly report' },
   { to: '/settings/account', icon: 'shield', label: 'Profile & Account' },
 ];
 

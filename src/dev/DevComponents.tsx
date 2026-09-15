@@ -19,6 +19,23 @@ import Modal from '../components/overlay/Modal';
 import Popover from '../components/overlay/Popover';
 import { moodExpr, moodMelt } from '../data/tasks';
 import { useAppState } from '../hooks/useAppState';
+import CoreColumn, { CoreDayLabels } from '../components/content/CoreColumn';
+import {
+  BeatAttention,
+  BeatCore,
+  BeatDrilling,
+  BeatLanding,
+  BeatMoment,
+  BeatNumeral,
+  BeatRecovery,
+  BeatShape,
+  BeatTexture,
+  SupportBanner,
+} from '../screens/report/beats';
+import { StoryScaleContext } from '../screens/report/storyScale';
+import { ReportCopy } from '../screens/report/reportCopy';
+import { blankWeek, shapeOnly } from '../lib/weeklyReport';
+import { midWeekFixture } from './weeklyReportFixture';
 
 /* ─────────────────────────────────────────────────────────────────────────
    /dev/components — a scratch gallery for eyeballing every variant and state.
@@ -41,6 +58,8 @@ export default function DevComponents() {
   const [modal, setModal] = useState(false);
   const [pop, setPop] = useState(false);
   const [progress, setProgress] = useState(0.38);
+  const [fixture] = useState(midWeekFixture);
+  const [coreRun, setCoreRun] = useState(0);
 
   return (
     <div
@@ -275,6 +294,89 @@ export default function DevComponents() {
         </Row>
       </Section>
 
+      <Section title="The Core — mid-week fixture (today treated as Thursday)">
+        <Row>
+          <Stack label="animated · replay">
+            <button type="button" onClick={() => setCoreRun((n) => n + 1)} className="focus-ring" style={{ borderRadius: 8 }}>
+              <CoreColumn key={coreRun} days={fixture.days} />
+            </button>
+          </Stack>
+          <Stack label="labels + core">
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <CoreDayLabels days={fixture.days} height={340} emphasise={4} />
+              <CoreColumn days={fixture.days} animate={false} />
+            </div>
+          </Stack>
+          <Stack label="mini (Profile)">
+            <CoreColumn days={fixture.days} width={46} height={108} animate={false} />
+          </Stack>
+          <Stack label="shared — mood stripped">
+            <CoreColumn days={shapeOnly(fixture).days} width={96} height={250} animate={false} />
+          </Stack>
+          <Stack label="blank week">
+            <CoreColumn days={blankWeek()} width={96} height={250} animate={false} />
+          </Stack>
+        </Row>
+        <div style={{ width: 360, marginTop: 10 }}>
+          <CoreEntryCardPreview />
+        </div>
+      </Section>
+
+      <Section title="The Core — every beat, at story scale 0.8">
+        <StoryScaleContext.Provider value={0.8}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+            {[
+              <BeatDrilling key="drill" days={fixture.days} />,
+              <BeatShape key="shape" shape={fixture.shape} />,
+              <BeatCore key="core" report={fixture} play />,
+              fixture.moment && (
+                <BeatMoment
+                  key="moment"
+                  moment={fixture.moment}
+                  subjectName={fixture.subjects[0].name}
+                  subjectColor={fixture.subjects[0].colorHex}
+                />
+              ),
+              <BeatNumeral key="numeral" value={fixture.activeDays} />,
+              <BeatAttention key="attention" report={fixture} />,
+              fixture.recovery && <BeatRecovery key="recovery" recovery={fixture.recovery} />,
+              <BeatTexture
+                key="texture"
+                rows={[
+                  ...(fixture.longestSession
+                    ? [[ReportCopy.longestTitle, ReportCopy.longest(fixture.longestSession)] as [string, string]]
+                    : []),
+                  [ReportCopy.heldTitle, ReportCopy.held(fixture.heldMinutes)],
+                  [ReportCopy.rhythmTitle, ReportCopy.rhythm(fixture.rhythmWeekdays)],
+                  [ReportCopy.prismTitle, fixture.prismMix.map((m) => m.name).join(' · ')],
+                ]}
+              />,
+              <BeatLanding key="landing" isEmptyWeek={false} onKeep={() => {}} onShare={() => {}} onDismiss={() => {}} />,
+            ].map((beat, i) =>
+              beat ? (
+                <div
+                  key={i}
+                  style={{
+                    width: 312,
+                    height: 520,
+                    display: 'flex',
+                    background: 'var(--surface-page)',
+                    border: '1px solid var(--border-hairline)',
+                    borderRadius: 14,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {beat}
+                </div>
+              ) : null,
+            )}
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <SupportBanner onView={() => {}} onDismiss={() => {}} />
+          </div>
+        </StoryScaleContext.Provider>
+      </Section>
+
       <Section title="Icons in use">
         <Row>
           {[
@@ -313,6 +415,47 @@ export default function DevComponents() {
           Anchored, dimmed to rgba(20,15,28,.22), no full scrim.
         </div>
       </Popover>
+    </div>
+  );
+}
+
+/** The Profile entry card's look, without its data hook — the gallery has no session. */
+function CoreEntryCardPreview() {
+  const days = midWeekFixture().days;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 20,
+        padding: 18,
+        background: 'var(--surface-card)',
+        borderRadius: 18,
+        boxShadow: 'var(--shadow-card)',
+      }}
+    >
+      <CoreColumn days={days} width={46} height={108} animate={false} />
+      <div style={{ flex: 1 }}>
+        <div style={{ font: '800 9.5px var(--font-sans)', letterSpacing: '0.16em', color: 'var(--text-secondary)' }}>
+          {ReportCopy.entryEyebrow}
+        </div>
+        <div style={{ font: '800 22px var(--font-sans)', letterSpacing: '-0.5px', marginTop: 7 }}>
+          {ReportCopy.coreName}
+        </div>
+        <div style={{ font: '400 12.5px/1.35 var(--font-sans)', color: 'var(--text-secondary)', marginTop: 5 }}>
+          {ReportCopy.entryTagline}
+        </div>
+      </div>
+      <span
+        style={{
+          alignSelf: 'flex-start',
+          width: 12,
+          height: 12,
+          borderRadius: '50%',
+          background: 'var(--accent)',
+          boxShadow: '0 0 10px 2px color-mix(in srgb, var(--accent) 45%, transparent)',
+        }}
+      />
     </div>
   );
 }

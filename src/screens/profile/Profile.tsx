@@ -11,6 +11,8 @@ import { MoodWeek } from '../../components/content/MoodScale';
 import InviteHero from '../../components/content/InviteHero';
 import ReferralSheet from './ReferralSheet';
 import GuestStatsLocked from './GuestStatsLocked';
+import CoreEntryCard from '../report/CoreEntryCard';
+import { useWeeklyReportEnabled } from '../../hooks/useWeeklyReportEnabled';
 import MorningCheckIn from '../mood/MorningCheckIn';
 import EveningReflection from '../mood/EveningReflection';
 import {
@@ -57,6 +59,7 @@ export default function Profile() {
   const mood = useMoodWeek();
   const week = useWeekCount();
 
+  const [reportEnabled] = useWeeklyReportEnabled();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [moodOpen, setMoodOpen] = useState(false);
   const [reflectionOpen, setReflectionOpen] = useState(false);
@@ -143,6 +146,11 @@ export default function Profile() {
                 <StatCard value={String(stats.data?.completed_tasks ?? 0)} label="TASKS DONE" />
               </div>
             </AsyncSection>
+
+            {/* The Core — the weekly report. Turned off means gone, not greyed: a
+                disabled card that still names the thing you declined is a
+                re-prompt with extra steps. */}
+            {reportEnabled && <CoreEntryCard />}
 
             <Card padding={18}>
               <div

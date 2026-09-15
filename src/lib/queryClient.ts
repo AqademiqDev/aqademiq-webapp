@@ -45,6 +45,8 @@ export const qk = {
 
   streak: ['streak'] as const,
   activityDates: ['activity-dates'] as const,
+  /** Not keyed by week on purpose — there is no way to ask for another one. */
+  weeklyReport: ['weekly-report'] as const,
   weekCount: (date?: string) => ['week-count', date ?? 'today'] as const,
 
   mood: (date: string) => ['mood', date] as const,
@@ -77,4 +79,7 @@ export function invalidatePlan(): void {
   void queryClient.invalidateQueries({ queryKey: qk.activityDates });
   void queryClient.invalidateQueries({ queryKey: ['week-count'] });
   void queryClient.invalidateQueries({ queryKey: ['subjects'] });
+  // A completed task or focus session changes which bands of the week's core
+  // are filled — the Profile thumbnail should not lag behind the work.
+  void queryClient.invalidateQueries({ queryKey: qk.weeklyReport });
 }

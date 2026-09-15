@@ -451,6 +451,103 @@ export interface ChangelogEntryDto {
   published_at: string;
 }
 
+/* ── Weekly report — The Core ───────────────────────────────────────────
+   `GET /me/weekly-report`. The server sends facts only: no sentence, label or
+   adjective crosses the wire. All copy is templated in screens/report so the
+   banned-word check can see it. Every field here is read defensively in
+   lib/weeklyReport.ts, because this payload is drawn as one whole screen. */
+
+/** The week's distribution, classified server-side from which days carried work. */
+export type WeekShapeWire =
+  | 'empty'
+  | 'single'
+  | 'steady'
+  | 'front_loaded'
+  | 'back_loaded'
+  | 'clustered'
+  | 'scattered';
+
+export interface WeeklyReportDayDto {
+  /** `yyyy-MM-dd`. */
+  date: string;
+  /** 1 = Monday … 7 = Sunday. */
+  weekday: number;
+  /** 0–4 on the shipped mood ramp, or null when nothing was logged. */
+  mood_index: number | null;
+  has_activity: boolean;
+  /** A day later in the week than today — neither active nor a gap. */
+  is_future: boolean;
+  tasks_completed: number;
+  focus_minutes: number;
+  focus_sessions: number;
+}
+
+export interface ReportSubjectDto {
+  subject_id: string;
+  /** Null when the subject was deleted after the work happened. */
+  name: string | null;
+  color: string | null;
+  focus_minutes: number;
+  tasks_completed: number;
+  /** 0–1, in the unit named by `subject_basis`. */
+  share: number;
+}
+
+export interface ReportMomentDto {
+  kind?: 'task_completed';
+  date: string;
+  title: string;
+  subject_id: string | null;
+}
+
+export interface ReportRecoveryDto {
+  sessions: number;
+  before_avg: number;
+  after_avg: number;
+  /** Always > 0 — the server sends null rather than a lift pointing the wrong way. */
+  lift: number;
+}
+
+export interface ReportLongestDto {
+  minutes: number;
+  date: string;
+  task_title: string | null;
+}
+
+export interface ReportPrismSliceDto {
+  preset_id: string;
+  name: string;
+  sessions: number;
+  share: number;
+}
+
+export interface WeeklyReportDto {
+  week_start: string;
+  week_end: string;
+  days: WeeklyReportDayDto[];
+  shape: WeekShapeWire;
+  /** Days **this week** that carried work — the hero numeral. */
+  active_days: number;
+  /** Days the week has had so far: 4 on a Thursday, 7 once it is over. */
+  elapsed_days: number;
+  /** Lifetime days on the board. Deliberately never headlined. */
+  days_on_board: number;
+  subjects: ReportSubjectDto[];
+  subject_basis: 'focus_minutes' | 'tasks_completed';
+  unattributed_focus_minutes: number;
+  unattributed_tasks_completed: number;
+  moment: ReportMomentDto | null;
+  recovery: ReportRecoveryDto | null;
+  longest_session: ReportLongestDto | null;
+  held_minutes: number;
+  prism_mix: ReportPrismSliceDto[];
+  /** Weekdays (1–7) that reliably carry work. Empty until there is history. */
+  rhythm_weekdays: number[];
+  focus_minutes: number;
+  focus_sessions: number;
+  tasks_completed: number;
+}
+
 /* ── Referrals / misc ───────────────────────────────────────────────── */
 
 export interface ReferralBalanceDto {

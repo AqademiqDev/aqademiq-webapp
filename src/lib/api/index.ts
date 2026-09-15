@@ -39,6 +39,7 @@ import type {
   SubjectInput,
   TaskStepDto,
   UploadInitDto,
+  WeeklyReportDto,
 } from './types';
 
 export * from './types';
@@ -58,6 +59,13 @@ export const updateProfile = (patch: ProfilePatch) =>
 export const deleteAccount = () => api.del<{ status: string }>('/profile/account');
 
 export const getStats = () => api.get<StatsDto>('/me/stats');
+
+/* The current week's Core, and only the current week. There is deliberately no
+   `week_start` parameter here even though the endpoint accepts one: browsing
+   back through past weeks is a rumination affordance the design rules out, and
+   a function that cannot name another week is the cheapest place to make that
+   true. Mirrors `weeklyReportProvider` in the mobile app. */
+export const getWeeklyReport = () => api.get<WeeklyReportDto>('/me/weekly-report');
 
 export const getSettings = () => api.get<SettingsDto>('/me/settings');
 export const updateSettings = (patch: SettingsPatch) =>

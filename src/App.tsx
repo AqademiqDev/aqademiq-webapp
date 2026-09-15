@@ -18,6 +18,7 @@ import Subjects from './screens/subjects/Subjects';
 import Focus from './screens/focus/Focus';
 import Ada from './screens/ada/Ada';
 import Profile from './screens/profile/Profile';
+import WeeklyReport from './screens/report/WeeklyReport';
 import Feedback from './screens/feedback/Feedback';
 import SuggestionDetail from './screens/feedback/SuggestionDetail';
 import Settings from './screens/settings/Settings';
@@ -28,6 +29,7 @@ import Notifications from './screens/settings/panels/Notifications';
 import Prism from './screens/settings/panels/Prism';
 import ImportPanel from './screens/settings/panels/Import';
 import Memories from './screens/settings/panels/Memories';
+import WeeklyReportPanel from './screens/settings/panels/WeeklyReport';
 import Account from './screens/settings/panels/Account';
 
 import DevComponents from './dev/DevComponents';
@@ -120,6 +122,8 @@ export default function App() {
         <Route path="/ada/:chatId" element={<Ada historyOpen />} />
 
         <Route path="/profile" element={<Profile />} />
+        {/* The Core. Only ever the current week — the route takes no week param. */}
+        <Route path="/report/week" element={<WeeklyReport />} />
 
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/feedback/:id" element={<SuggestionDetail />} />
@@ -131,6 +135,7 @@ export default function App() {
           <Route path="prism" element={<Prism />} />
           <Route path="import" element={<ImportPanel />} />
           <Route path="memories" element={<Memories />} />
+          <Route path="report" element={<WeeklyReportPanel />} />
           <Route path="account" element={<Account />} />
         </Route>
       </Route>

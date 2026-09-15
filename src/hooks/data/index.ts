@@ -9,3 +9,4 @@ export * from './useProfile';
 export * from './useSubjects';
 export * from './useTags';
 export * from './useTasks';
+export * from './useWeeklyReport';

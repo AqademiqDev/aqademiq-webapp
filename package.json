@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "check:report-copy": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/check-report-copy.ts",
     "preview": "vite preview"
   },
   "dependencies": {
